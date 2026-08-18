@@ -72,7 +72,9 @@ describe("visual note schema", () => {
   test("rejects traversal evidence paths", () => {
     // Given
     const input = structuredClone(validSpec);
-    const firstNode = input.nodes.at(0);
+    const firstNode = input.nodes.at(0) as
+      | ((typeof validSpec.nodes)[number] & { visual?: unknown })
+      | undefined;
     const firstEvidence = firstNode?.evidence.at(0);
     if (firstEvidence === undefined) throw new TypeError("fixture requires evidence");
     firstEvidence.path = "../secret";
@@ -80,6 +82,31 @@ describe("visual note schema", () => {
     const parse = (): unknown => parseVisualNoteSpec(input);
     // Then
     expect(parse).toThrow();
+  });
+
+  test("accepts presentation frames and rejects unknown frame references", () => {
+    const input = structuredClone(validSpec) as typeof validSpec & {
+      presentation?: unknown;
+      nodes: Array<(typeof validSpec.nodes)[number] & { visual?: unknown }>;
+    };
+    input.presentation = {
+      layout: "frames",
+      direction: "left-to-right",
+      frames: [{ id: "cloudflare", label: "Cloudflare", category: "cloudflare", order: 0 }],
+    };
+    const presentedNode = input.nodes.at(0) as
+      | ((typeof validSpec.nodes)[number] & { visual?: unknown })
+      | undefined;
+    if (presentedNode === undefined) throw new TypeError("fixture requires a first node");
+    presentedNode.visual = {
+      category: "cloudflare",
+      frameId: "cloudflare",
+      shape: "rectangle",
+      order: 0,
+    };
+    expect(parseVisualNoteSpec(input).presentation?.layout).toBe("frames");
+    presentedNode.visual = { frameId: "missing" };
+    expect(() => parseVisualNoteSpec(input)).toThrow(/unknown presentation frame/i);
   });
 
   test("reads an existing Git revision without changing repository state", () => {

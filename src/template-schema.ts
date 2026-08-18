@@ -1,6 +1,12 @@
 import { resolve } from "node:path";
 import { z } from "zod";
-import { evidenceReferenceSchema, knowledgeStatusSchema, visualKindValues } from "./schema";
+import {
+  evidenceReferenceSchema,
+  knowledgeStatusSchema,
+  nodeVisualSchema,
+  presentationSchema,
+  visualKindValues,
+} from "./schema";
 
 const semanticId = z
   .string()
@@ -26,7 +32,9 @@ const templateClaimFields = {
   evidence: z.array(evidenceReferenceSchema),
 } as const;
 
-export const templateNodeSchema = z.object(templateClaimFields).strict();
+export const templateNodeSchema = z
+  .object({ ...templateClaimFields, visual: nodeVisualSchema.optional() })
+  .strict();
 export const templateEdgeSchema = z
   .object({
     ...templateClaimFields,
@@ -42,6 +50,7 @@ export const templateArtifactSchema = z
     titleKo: z.string().trim().min(1),
     titleEn: z.string().trim().min(1),
     maxViewNodes: z.number().int().min(3).max(8).default(6),
+    presentation: presentationSchema.optional(),
     nodes: z.array(templateNodeSchema).min(1),
     edges: z.array(templateEdgeSchema),
   })
@@ -63,6 +72,15 @@ export const templateArtifactSchema = z
         context.addIssue({
           code: "custom",
           message: `dangling template edge ${edge.semanticId} in ${artifact.artifactId}`,
+        });
+      }
+    }
+    const frameIds = new Set((artifact.presentation?.frames ?? []).map((frame) => frame.id));
+    for (const node of artifact.nodes) {
+      if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId)) {
+        context.addIssue({
+          code: "custom",
+          message: `node ${node.semanticId} references an unknown frame in ${artifact.artifactId}`,
         });
       }
     }

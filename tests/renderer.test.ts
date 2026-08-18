@@ -103,6 +103,7 @@ describe("deterministic renderer plan", () => {
     expect(script).toContain("ea.addAppendUpdateCustomData");
     expect(script).toContain("ea.addElementsToView");
     expect(script).toContain("ea.createSVG");
+    expect(script).toContain("element.groupIds = groupIdFor(planned)");
   });
 
   test("plans every arrow in Excalidraw canonical first-endpoint coordinates", () => {
@@ -170,5 +171,101 @@ describe("deterministic renderer plan", () => {
         expect(separated).toBe(true);
       }
     }
+  });
+
+  test("plans framed architecture views with semantic categories and shapes", () => {
+    const input = structuredClone(fixture);
+    input.presentation = {
+      layout: "frames",
+      direction: "left-to-right",
+      frames: [
+        { id: "external", label: "External", category: "external", order: 0 },
+        { id: "cloudflare", label: "Cloudflare", category: "cloudflare", order: 1 },
+      ],
+    };
+    input.nodes = input.nodes.map((node, index) => ({
+      ...node,
+      visual: {
+        category: index < 2 ? "external" : "cloudflare",
+        frameId: index < 2 ? "external" : "cloudflare",
+        shape: index === 0 ? "ellipse" : "rectangle",
+        order: index,
+      } as const,
+    }));
+    const plan = planScene(parseVisualNoteSpec(input));
+    expect(plan.elements.filter((element) => element.role === "frame-shape")).toHaveLength(2);
+    expect(
+      plan.elements.find(
+        (element) => element.semanticId === "browser" && element.role === "node-shape",
+      )?.type,
+    ).toBe("ellipse");
+    expect(
+      plan.elements.find(
+        (element) => element.semanticId === "gateway" && element.role === "node-shape",
+      )?.customData.category,
+    ).toBe("external");
+  });
+
+  test("places exception timeline nodes on a separate lane", () => {
+    const input = structuredClone(fixture);
+    input.presentation = { layout: "timeline", direction: "left-to-right", frames: [] };
+    input.nodes = input.nodes.map((node, index) => ({
+      ...node,
+      visual: {
+        order: index,
+        lane: index === input.nodes.length - 1 ? "exception" : "main",
+      } as const,
+    }));
+    const plan = planScene(parseVisualNoteSpec(input));
+    const main = plan.elements.find(
+      (element) => element.semanticId === "browser" && element.role === "node-shape",
+    );
+    const exception = plan.elements.find(
+      (element) => element.semanticId === "worker" && element.role === "node-shape",
+    );
+    expect(exception?.y).toBeGreaterThan(main?.y ?? 0);
+    expect(exception?.x).toBe(80 + (input.nodes.length - 1) * 380);
+  });
+
+  test("centers every primary data store in the hub column", () => {
+    const input = structuredClone(fixture);
+    input.presentation = { layout: "hub", direction: "left-to-right", frames: [] };
+    input.nodes = input.nodes.map((node, index) => ({
+      ...node,
+      visual: {
+        order: index,
+        category: "data",
+        emphasis: index < 3 ? "primary" : "secondary",
+        lane: index < 3 ? "main" : "downstream",
+      } as const,
+    }));
+    const shapes = planScene(parseVisualNoteSpec(input)).elements.filter(
+      (element) => element.role === "node-shape",
+    );
+    expect(shapes.slice(0, 3).map((element) => element.x)).toEqual([560, 560, 560]);
+    expect(new Set(shapes.slice(0, 3).map((element) => element.y)).size).toBe(3);
+  });
+
+  test("lays component modules out horizontally inside their runtime frame", () => {
+    const input = structuredClone(fixture);
+    input.presentation = {
+      layout: "components",
+      direction: "left-to-right",
+      frames: [{ id: "worker", label: "Worker", category: "cloudflare", order: 0 }],
+    };
+    input.nodes = input.nodes.slice(0, 3).map((node, index) => ({
+      ...node,
+      visual: { frameId: "worker", category: "runtime", order: index } as const,
+    }));
+    input.edges = input.edges.filter(
+      (edge) =>
+        input.nodes.some((node) => node.semanticId === edge.from) &&
+        input.nodes.some((node) => node.semanticId === edge.to),
+    );
+    const shapes = planScene(parseVisualNoteSpec(input)).elements.filter(
+      (element) => element.role === "node-shape",
+    );
+    expect(new Set(shapes.map((element) => element.y)).size).toBe(1);
+    expect(new Set(shapes.map((element) => element.x)).size).toBe(3);
   });
 });

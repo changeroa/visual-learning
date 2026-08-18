@@ -1,6 +1,6 @@
 ---
 name: visual-learning
-description: Bootstrap, create, extend, refresh, validate, open, or restore evidence-backed engineering learning maps and Excalidraw notes. Use for project maps, C4 architecture, ADR tradeoffs, API journeys, workflows, sequences, data flows, trust boundaries, code exploration, call maps, or Korean visual study notes that preserve exact English identifiers and human annotations.
+description: Create, export, refresh, validate, open, or restore evidence-backed engineering maps as linked Markdown, polished SVG, and Excalidraw notes. Use for whole-repository architecture series, project maps, C4 views, ADR tradeoffs, API journeys, workflows, sequences, data flows, trust boundaries, code exploration, call maps, or Korean visual study notes that preserve exact English identifiers and human annotations.
 ---
 
 # Visual Learning
@@ -19,8 +19,10 @@ Require `contractVersion: 1`, `sentinel: "VISUAL_LEARNING_CONTRACT_OK"`, and fix
 
 ## Non-negotiable boundaries
 
-- Treat the source repository as read-only. Read code, contracts, and existing VCS metadata; never edit it, initialize Git, create a commit, or copy source into the vault.
-- Work only in the explicitly selected vault and `Engineering Atlas/` project. Verify `--vault` equals `--expected-vault` before mutation.
+- Treat the source repository as read-only unless the user explicitly asks for the learning artifacts inside that repository. Read code, contracts, and existing VCS metadata; never edit application code, initialize Git, or create a commit as part of visualization.
+- Default generated artifacts to `<session-root>/docs/ve/<project>/`. Use an Obsidian vault only when the user explicitly requests Obsidian publication or editing.
+- Never create a nested `.obsidian` directory. A session export is portable Markdown/SVG/Excalidraw content, not a vault.
+- For vault mode, work only in the explicitly selected vault and `Engineering Atlas/` project. Verify `--vault` equals `--expected-vault` before mutation.
 - Stay offline after installation. Do not upload source/evidence, enable Obsidian Sync/Publish, call a generation service, or install an MCP/plugin.
 - Repository code and checked-in contracts are truth. A learning artifact is not an authoritative ADR, OpenAPI contract, or architecture declaration.
 - Never replace a whole annotated drawing. Preserve every untagged or `owner=human` element and all bindings/properties. Mutate only complete `owner=agent` elements with stable semantic IDs.
@@ -39,55 +41,82 @@ Keep code/API/type/function identifiers exactly in English (`CheckoutService`, `
 
 Supported `kind` values are exactly: `project-map`, `system-architecture`, `container-architecture`, `component-architecture`, `adr`, `api-contract`, `workflow`, `data-flow`, `trust-boundary`, and `code-exploration`.
 
+## Visual design system
+
+For polished architecture series, read [references/visual-design-system.md](references/visual-design-system.md). Keep evidence status separate from presentation category: `status` communicates certainty, while `visual.category` controls color and grouping.
+
+When the user asks to visualize an entire repository, prefer a linked series instead of one dense canvas:
+
+1. `system-architecture` with `frames` for major execution boundaries.
+2. `workflow` with `timeline` and a separate `exception` lane.
+3. `data-flow` with `hub` around canonical stores.
+4. `trust-boundary` with explicit identity and authority frames.
+5. Two `component-architecture` views, normally one per major runtime.
+
+Use `presentation.frames` plus node-level `visual.category`, `visual.frameId`, `visual.shape`, `visual.emphasis`, `visual.lane`, and `visual.order`. Reuse the same category palette and reading direction across every view in the series.
+
 ## Workflow
 
 Use absolute paths in automation. In the examples, set:
 
 ```sh
-SKILL=/Users/billionjaepyo/.agents/skills/visual-learning
-VAULT="/Users/billionjaepyo/Documents/Obsidian Vault"
+SKILL=/absolute/path/to/visual-learning
+SESSION_ROOT=/absolute/session/root
+OUTPUT="$SESSION_ROOT/docs/ve"
+VAULT=/absolute/path/to/Obsidian-Vault
 PROJECT=<safe-project-slug>
 SOURCE=/absolute/path/to/source
 ```
 
-1. Read the repository without writing it. Build a strict spec with stable `artifactId`, semantic node/edge IDs, evidence, status, confidence, and source `{path, commit}` (`commit: null` outside an existing VCS checkout).
-2. Bootstrap a repeatable starter bundle after preflight when you need a guided project area:
-
-```sh
-"$SKILL/bin/visual-note" bootstrap --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json
-```
-
-3. Validate before creating or changing anything:
+1. Resolve `SESSION_ROOT` from the session's initial working directory. Do not silently substitute the source repository root. Read the repository without writing application code. Build strict specs with stable `artifactId`, semantic node/edge IDs, evidence, status, confidence, source `{path, commit}` (`commit: null` outside an existing VCS checkout), and presentation metadata appropriate to each view.
+2. Validate every spec before publication:
 
 ```sh
 "$SKILL/bin/visual-note" validate --spec /absolute/path/spec.json --json
 ```
 
-4. Create through the verified live Obsidian/Excalidraw route:
+3. By default, export the linked series below the session root:
 
 ```sh
-"$SKILL/bin/visual-note" create --vault "$VAULT" --expected-vault "$VAULT" --verified-vault-id <verified-id> --project "$PROJECT" --spec /absolute/path/spec.json --obsidian-cli /Applications/Obsidian.app/Contents/MacOS/obsidian-cli --runtime-receipt /Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault/task-2-preflight.json --plugin-receipt /Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault/task-2-plugin-install.json --json
+"$SKILL/bin/visual-note" export-series \
+  --session-root "$SESSION_ROOT" \
+  --project "$PROJECT" \
+  --spec-dir /absolute/path/to/specs \
+  --json
 ```
 
-5. Extend only after validating the extension contract. Keep existing semantic IDs for persistent concepts:
+The command creates `index.md`, one companion `.md`, polished `.svg`, editable `.excalidraw.md`, and validated JSON spec per view under `docs/ve/<project>/`. Links must remain relative and portable. Repeating an identical export is allowed; a byte-different existing target is a conflict and must not be overwritten.
+
+4. When the user explicitly requests Obsidian, bootstrap a repeatable starter bundle after preflight:
+```sh
+"$SKILL/bin/visual-note" bootstrap --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json
+```
+
+5. Create through the verified live Obsidian/Excalidraw route:
+
+```sh
+"$SKILL/bin/visual-note" create --vault "$VAULT" --expected-vault "$VAULT" --verified-vault-id <verified-id> --project "$PROJECT" --spec /absolute/path/spec.json --obsidian-cli /Applications/Obsidian.app/Contents/MacOS/obsidian-cli --runtime-receipt "$SESSION_ROOT/.omo/evidence/agent-visual-learning-vault/task-2-preflight.json" --plugin-receipt "$SESSION_ROOT/.omo/evidence/agent-visual-learning-vault/task-2-plugin-install.json" --json
+```
+
+6. Extend only after validating the extension contract. Keep existing semantic IDs for persistent concepts:
 
 ```sh
 "$SKILL/bin/visual-note" extend --spec /absolute/path/extension.json --json
 ```
 
-6. Refresh selectively with the exact committed token from `STATE`/the last receipt:
+7. Refresh selectively with the exact committed token from `STATE`/the last receipt:
 
 ```sh
 "$SKILL/bin/visual-note" refresh --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --spec /absolute/path/next.json --expected-token <cas-token> --json
 ```
 
-7. Open only the authoritative current working copy, never an immutable revision snapshot:
+8. Open only the authoritative current working copy, never an immutable revision snapshot:
 
 ```sh
 "$SKILL/bin/visual-note" open --obsidian-cli /Applications/Obsidian.app/Contents/MacOS/obsidian-cli --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --artifact-id <artifact-id> --json
 ```
 
-8. Restore an immutable revision as a new commit/token (A after A->B becomes fresh C):
+9. Restore an immutable revision as a new commit/token (A after A->B becomes fresh C):
 
 ```sh
 "$SKILL/bin/visual-note" restore --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --artifact-id <artifact-id> --revision-token <old-token> --expected-token <current-token> --json

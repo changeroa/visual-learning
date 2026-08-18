@@ -87,11 +87,13 @@ function buildSpec(
     revision: 1,
     title,
     source: { root: repositoryRoot, commit: null },
+    presentation: artifact.presentation,
     nodes: nodes.map((node) => ({
       semanticId: node.semanticId,
       label: labelForClaim(node),
       status: node.status,
       evidence: node.evidence,
+      visual: node.visual,
     })),
     edges: edges.map((edge) => ({
       semanticId: edge.semanticId,

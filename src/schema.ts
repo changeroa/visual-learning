@@ -26,6 +26,46 @@ const sourceRoot = z
     "source root must be a normalized absolute path",
   );
 
+export const visualCategorySchema = z.enum([
+  "cloudflare",
+  "aws",
+  "external",
+  "data",
+  "runtime",
+  "security",
+  "risk",
+  "neutral",
+]);
+const frameIdSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+export const nodeVisualSchema = z
+  .object({
+    category: visualCategorySchema.optional(),
+    frameId: frameIdSchema.optional(),
+    shape: z.enum(["rectangle", "ellipse", "diamond"]).optional(),
+    emphasis: z.enum(["primary", "secondary", "muted"]).optional(),
+    lane: z.enum(["main", "exception", "upstream", "downstream"]).optional(),
+    order: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export const presentationSchema = z
+  .object({
+    layout: z.enum(["layered", "frames", "timeline", "hub", "trust-boundary", "components"]),
+    direction: z.literal("left-to-right").default("left-to-right"),
+    frames: z
+      .array(
+        z
+          .object({
+            id: frameIdSchema,
+            label: z.string().trim().min(1),
+            category: visualCategorySchema,
+            order: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .default([]),
+  })
+  .strict();
+
 export const evidenceReferenceSchema = z
   .object({
     path: evidencePath,
@@ -67,7 +107,9 @@ const claimFields = {
   evidence: z.array(evidenceReferenceSchema),
 } as const;
 
-export const visualNodeSchema = z.object(claimFields).strict();
+export const visualNodeSchema = z
+  .object({ ...claimFields, visual: nodeVisualSchema.optional() })
+  .strict();
 export const visualEdgeSchema = z
   .object({
     ...claimFields,
@@ -92,6 +134,7 @@ export const visualNoteSpecSchema = z
           .nullable(),
       })
       .strict(),
+    presentation: presentationSchema.optional(),
     nodes: z.array(visualNodeSchema).min(1),
     edges: z.array(visualEdgeSchema),
   })
@@ -114,6 +157,17 @@ export const visualNoteSpecSchema = z
     for (const claim of [...spec.nodes, ...spec.edges]) {
       if (claim.status === "fact" && claim.evidence.length === 0)
         context.addIssue({ code: "custom", message: `fact ${claim.semanticId} requires evidence` });
+    }
+    const frames = spec.presentation?.frames ?? [];
+    if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
+      context.addIssue({ code: "custom", message: "presentation frame IDs must be unique" });
+    const frameIds = new Set(frames.map((frame) => frame.id));
+    for (const node of spec.nodes) {
+      if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId))
+        context.addIssue({
+          code: "custom",
+          message: `node ${node.semanticId} references an unknown presentation frame`,
+        });
     }
   });
 

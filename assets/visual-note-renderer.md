@@ -5,11 +5,28 @@ uses only the ExcalidrawAutomate workbench for drawing creation/edits, exports S
 and writes the deterministic companion files through the Obsidian vault API.
 */
 const REQUEST_KEY = "__visualNoteRenderRequest";
-const palette = {
-  fact: { stroke: "#1971c2", background: "#d0ebff" },
-  inference: { stroke: "#e67700", background: "#fff3bf" },
-  question: { stroke: "#7048e8", background: "#e5dbff" },
+const categoryPalette = {
+  cloudflare: { stroke: "#e8590c", background: "#fff4e6" },
+  aws: { stroke: "#b7791f", background: "#fff9db" },
+  external: { stroke: "#495057", background: "#f1f3f5" },
+  data: { stroke: "#1971c2", background: "#e7f5ff" },
+  runtime: { stroke: "#7048e8", background: "#f3f0ff" },
+  security: { stroke: "#2b8a3e", background: "#ebfbee" },
+  risk: { stroke: "#c92a2a", background: "#fff5f5" },
+  neutral: { stroke: "#475569", background: "#f8fafc" },
 };
+
+function visualPalette(planned) {
+  if (planned.role === "title") return { stroke: "#1e293b", background: "transparent" };
+  if (planned.role.startsWith("edge")) return { stroke: "#64748b", background: "transparent" };
+  return categoryPalette[planned.customData.category] ?? categoryPalette.neutral;
+}
+
+/** Keep each generated shape/label pair reusable as one Excalidraw group. */
+function groupIdFor(planned) {
+  if (planned.role === "title") return [];
+  return [`visual-note:${planned.customData.artifactId}:${planned.semanticId}`];
+}
 
 /** Return the validated request supplied by the typed CLI adapter. */
 function readRequest() {
@@ -23,26 +40,30 @@ function readRequest() {
 
 /** Apply deterministic geometry and style to an EA workbench element. */
 function applyElement(element, planned) {
-  const colors = palette[planned.customData.status];
+  const colors = visualPalette(planned);
   element.x = planned.x;
   element.y = planned.y;
   element.width = planned.width;
   element.height = planned.height;
   element.angle = 0;
   element.strokeColor = colors.stroke;
-  element.backgroundColor = planned.type === "rectangle" ? colors.background : "transparent";
+  element.backgroundColor = ["rectangle", "ellipse", "diamond"].includes(planned.type)
+    ? colors.background
+    : "transparent";
   element.fillStyle = "solid";
-  element.strokeWidth = planned.role === "title" ? 1 : 2;
+  element.strokeWidth = planned.role === "title" ? 1 : planned.role === "edge-line" ? 1.5 : 2;
   element.strokeStyle = planned.customData.status === "inference" ? "dashed" : "solid";
-  element.roughness = 0;
-  element.opacity = 100;
+  element.roughness = planned.role === "edge-line" ? 1 : planned.role.startsWith("frame") ? 0 : 0.7;
+  element.opacity = planned.role === "frame-shape" ? 32 : 100;
+  element.groupIds = groupIdFor(planned);
   if (planned.type === "text") {
     element.text = planned.text;
     element.originalText = planned.text;
     element.rawText = planned.text;
-    element.fontFamily = 2;
-    element.fontSize = planned.role === "title" ? 32 : planned.role === "edge-label" ? 16 : 20;
-    element.textAlign = "center";
+    element.fontFamily = planned.role === "edge-label" ? 2 : 1;
+    const longestLine = Math.max(...String(planned.text ?? "").split("\n").map((line) => Array.from(line).length));
+    element.fontSize = planned.role === "title" ? 34 : planned.role === "frame-label" ? 24 : planned.role === "edge-label" ? 13 : longestLine > 30 ? 16 : longestLine > 24 ? 18 : 20;
+    element.textAlign = planned.role === "frame-label" ? "left" : "center";
     element.verticalAlign = "middle";
     element.autoResize = false;
     element.containerId = null;
@@ -60,6 +81,10 @@ function applyElement(element, planned) {
 function addElement(planned) {
   if (planned.type === "rectangle") {
     ea.addRect(planned.x, planned.y, planned.width, planned.height, planned.id);
+  } else if (planned.type === "ellipse") {
+    ea.addEllipse(planned.x, planned.y, planned.width, planned.height, planned.id);
+  } else if (planned.type === "diamond") {
+    ea.addDiamond(planned.x, planned.y, planned.width, planned.height, planned.id);
   } else if (planned.type === "text") {
     ea.addText(
       planned.x,

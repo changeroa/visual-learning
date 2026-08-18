@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { optional, parseOptions, required } from "./arguments";
 import { runSpecCommand } from "./cli-spec";
@@ -16,9 +17,10 @@ import {
 } from "./operations";
 import { preflight } from "./preflight";
 import { parseVisualNoteSpec } from "./schema";
+import { exportSeries } from "./session-export";
 
 const officialCli = "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli";
-const evidenceRoot = "/Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault";
+const evidenceRoot = join(process.cwd(), ".omo/evidence/agent-visual-learning-vault");
 
 const help = `visual-note 0.1.0
 Usage: visual-note <command> [options]
@@ -28,6 +30,7 @@ Commands:
   init       initialize project metadata from a read-only local source
   bootstrap  stage a repeatable study-workflow sample bundle for a source
   create     validate and publish a new normalized visual-note spec
+  export-series  publish a linked SVG/Excalidraw series under <session-root>/docs/ve
   extend     validate an extension spec contract without rendering
   refresh    validate a refresh spec contract without rendering
   validate   validate a strict visual-note specification
@@ -117,6 +120,18 @@ function run(command: string, argv: readonly string[]): void {
                 `${evidenceRoot}/task-2-plugin-install.json`,
             });
       writeResult(result, options.json);
+      return;
+    }
+    case "export-series": {
+      const options = parseOptions(argv, new Set(["--session-root", "--project", "--spec-dir"]));
+      writeResult(
+        exportSeries({
+          sessionRoot: required(options, "--session-root"),
+          project: required(options, "--project"),
+          specDirectory: required(options, "--spec-dir"),
+        }),
+        options.json,
+      );
       return;
     }
     case "extend":

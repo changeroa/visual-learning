@@ -14,8 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const skill = "/Users/billionjaepyo/.agents/skills/visual-learning";
-const installer = join(skill, "scripts/install-links.ts");
+const installer = join(import.meta.dir, "../scripts/install-links.ts");
 const roots: string[] = [];
 
 afterEach(() => {
