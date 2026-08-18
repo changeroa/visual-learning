@@ -16,7 +16,7 @@ Keep overview views to roughly 4–8 nodes. Split denser content into related co
 
 ## Portable series structure
 
-Publish the default series under `<session-root>/docs/ve/<project>/`:
+Publish the default series under `<session-root>/docs/vl/projects/<project>/`:
 
 ```text
 index.md
@@ -27,7 +27,7 @@ specs/<artifact-id>.json
 manifest.json
 ```
 
-Use only relative links inside this tree. `index.md` links every companion note and embeds every SVG. Each companion note links the series home plus its previous and next views. Treat SVG as the read-only preview and `.excalidraw.md` as the editable source. Never add `.obsidian` below `docs/ve`.
+Use only relative links inside this tree. `index.md` links every companion note and embeds every SVG. Each companion note links the series home plus its previous and next views. Treat SVG as the read-only preview and `.excalidraw.md` as the editable source. Never add `.obsidian` below `docs/vl`. Keep generated project results isolated from the skill checkout and source repository.
 
 ## Visual grammar
 

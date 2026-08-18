@@ -32,7 +32,7 @@ function writeSpec(directory: string, artifactId: string, kind: string, title: s
 }
 
 describe("session-root series export", () => {
-  test("publishes a portable linked series under docs/ve and reruns byte-identically", () => {
+  test("publishes a portable linked series under isolated docs/vl/projects", () => {
     const sessionRoot = mkdtempSync(join(tmpdir(), "visual-learning-session-"));
     const specDirectory = mkdtempSync(join(tmpdir(), "visual-learning-specs-"));
     writeSpec(specDirectory, "system-overview", "system-architecture", "시스템 개요");
@@ -48,7 +48,7 @@ describe("session-root series export", () => {
       project: "example-project",
       specDirectory,
     });
-    const output = join(realpathSync(sessionRoot), "docs/ve/example-project");
+    const output = join(realpathSync(sessionRoot), "docs/vl/projects/example-project");
 
     expect(first.status).toBe("CREATED");
     expect(second.status).toBe("ALREADY_CURRENT");

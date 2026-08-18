@@ -20,7 +20,7 @@ Require `contractVersion: 1`, `sentinel: "VISUAL_LEARNING_CONTRACT_OK"`, and fix
 ## Non-negotiable boundaries
 
 - Treat the source repository as read-only unless the user explicitly asks for the learning artifacts inside that repository. Read code, contracts, and existing VCS metadata; never edit application code, initialize Git, or create a commit as part of visualization.
-- Default generated artifacts to `<session-root>/docs/ve/<project>/`. Use an Obsidian vault only when the user explicitly requests Obsidian publication or editing.
+- Default generated artifacts to the isolated project directory `<session-root>/docs/vl/projects/<project>/`. Use an Obsidian vault only when the user explicitly requests Obsidian publication or editing.
 - Never create a nested `.obsidian` directory. A session export is portable Markdown/SVG/Excalidraw content, not a vault.
 - For vault mode, work only in the explicitly selected vault and `Engineering Atlas/` project. Verify `--vault` equals `--expected-vault` before mutation.
 - Stay offline after installation. Do not upload source/evidence, enable Obsidian Sync/Publish, call a generation service, or install an MCP/plugin.
@@ -62,7 +62,7 @@ Use absolute paths in automation. In the examples, set:
 ```sh
 SKILL=/absolute/path/to/visual-learning
 SESSION_ROOT=/absolute/session/root
-OUTPUT="$SESSION_ROOT/docs/ve"
+OUTPUT="$SESSION_ROOT/docs/vl"
 VAULT=/absolute/path/to/Obsidian-Vault
 PROJECT=<safe-project-slug>
 SOURCE=/absolute/path/to/source
@@ -85,7 +85,7 @@ SOURCE=/absolute/path/to/source
   --json
 ```
 
-The command creates `index.md`, one companion `.md`, polished `.svg`, editable `.excalidraw.md`, and validated JSON spec per view under `docs/ve/<project>/`. Links must remain relative and portable. Repeating an identical export is allowed; a byte-different existing target is a conflict and must not be overwritten.
+The command creates `index.md`, one companion `.md`, polished `.svg`, editable `.excalidraw.md`, and validated JSON spec per view under `docs/vl/projects/<project>/`. Links must remain relative and portable. Keep runtime outputs outside the skill repository and source repository. Repeating an identical export is allowed; a byte-different existing target is a conflict and must not be overwritten.
 
 4. When the user explicitly requests Obsidian, bootstrap a repeatable starter bundle after preflight:
 ```sh

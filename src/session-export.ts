@@ -225,7 +225,7 @@ export function exportSeries(input: {
       })),
     } as const;
     write("manifest.json", jsonBytes(manifest));
-    const targetProject = join(sessionRoot, "docs", "ve", project);
+    const targetProject = join(sessionRoot, "docs", "vl", "projects", project);
     const published = publishProjectDirectory(stageProject, targetProject);
     return {
       operation: "export-series",

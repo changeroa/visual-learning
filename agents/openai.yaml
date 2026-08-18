@@ -1,4 +1,4 @@
 interface:
   display_name: "Visual Learning"
   short_description: "Export polished architecture maps and Excalidraw series"
-  default_prompt: "Use $visual-learning to map this codebase as a linked SVG and Excalidraw series under docs/ve."
+  default_prompt: "Use $visual-learning to map this codebase as a linked SVG and Excalidraw series under docs/vl/projects."

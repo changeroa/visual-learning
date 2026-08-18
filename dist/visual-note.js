@@ -18113,7 +18113,7 @@ function exportSeries(input) {
       }))
     };
     write("manifest.json", jsonBytes(manifest));
-    const targetProject = join14(sessionRoot, "docs", "ve", project);
+    const targetProject = join14(sessionRoot, "docs", "vl", "projects", project);
     const published = publishProjectDirectory(stageProject, targetProject);
     return {
       operation: "export-series",
@@ -18138,7 +18138,7 @@ Commands:
   init       initialize project metadata from a read-only local source
   bootstrap  stage a repeatable study-workflow sample bundle for a source
   create     validate and publish a new normalized visual-note spec
-  export-series  publish a linked SVG/Excalidraw series under <session-root>/docs/ve
+  export-series  publish a linked series under <session-root>/docs/vl/projects
   extend     validate an extension spec contract without rendering
   refresh    validate a refresh spec contract without rendering
   validate   validate a strict visual-note specification
