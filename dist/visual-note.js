@@ -16,7 +16,8 @@ var __export = (target, all) => {
 };
 
 // src/cli.ts
-import { readFileSync as readFileSync14 } from "fs";
+import { readFileSync as readFileSync15 } from "fs";
+import { join as join15 } from "path";
 
 // node_modules/zod/v4/classic/external.js
 var exports_external = {};
@@ -14472,6 +14473,35 @@ var semanticId = exports_external.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).b
 var artifactId = exports_external.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).brand("ArtifactId");
 var evidencePath = exports_external.string().min(1).refine((value) => !isAbsolute(value) && normalize(value) === value && !value.split("/").some((part) => part === "" || part === "." || part === ".."), "evidence path must be normalized and repository-relative");
 var sourceRoot = exports_external.string().refine((value) => isAbsolute(value) && normalize(value) === value, "source root must be a normalized absolute path");
+var visualCategorySchema = exports_external.enum([
+  "cloudflare",
+  "aws",
+  "external",
+  "data",
+  "runtime",
+  "security",
+  "risk",
+  "neutral"
+]);
+var frameIdSchema = exports_external.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+var nodeVisualSchema = exports_external.object({
+  category: visualCategorySchema.optional(),
+  frameId: frameIdSchema.optional(),
+  shape: exports_external.enum(["rectangle", "ellipse", "diamond"]).optional(),
+  emphasis: exports_external.enum(["primary", "secondary", "muted"]).optional(),
+  lane: exports_external.enum(["main", "exception", "upstream", "downstream"]).optional(),
+  order: exports_external.number().int().nonnegative().optional()
+}).strict();
+var presentationSchema = exports_external.object({
+  layout: exports_external.enum(["layered", "frames", "timeline", "hub", "trust-boundary", "components"]),
+  direction: exports_external.literal("left-to-right").default("left-to-right"),
+  frames: exports_external.array(exports_external.object({
+    id: frameIdSchema,
+    label: exports_external.string().trim().min(1),
+    category: visualCategorySchema,
+    order: exports_external.number().int().nonnegative()
+  }).strict()).default([])
+}).strict();
 var evidenceReferenceSchema = exports_external.object({
   path: evidencePath,
   lineStart: exports_external.number().int().positive().optional(),
@@ -14504,7 +14534,7 @@ var claimFields = {
   status: knowledgeStatusSchema,
   evidence: exports_external.array(evidenceReferenceSchema)
 };
-var visualNodeSchema = exports_external.object(claimFields).strict();
+var visualNodeSchema = exports_external.object({ ...claimFields, visual: nodeVisualSchema.optional() }).strict();
 var visualEdgeSchema = exports_external.object({
   ...claimFields,
   from: semanticId,
@@ -14520,6 +14550,7 @@ var visualNoteSpecSchema = exports_external.object({
     root: sourceRoot,
     commit: exports_external.string().regex(/^[0-9a-f]{7,64}$/).nullable()
   }).strict(),
+  presentation: presentationSchema.optional(),
   nodes: exports_external.array(visualNodeSchema).min(1),
   edges: exports_external.array(visualEdgeSchema)
 }).strict().superRefine((spec, context) => {
@@ -14540,6 +14571,17 @@ var visualNoteSpecSchema = exports_external.object({
   for (const claim of [...spec.nodes, ...spec.edges]) {
     if (claim.status === "fact" && claim.evidence.length === 0)
       context.addIssue({ code: "custom", message: `fact ${claim.semanticId} requires evidence` });
+  }
+  const frames = spec.presentation?.frames ?? [];
+  if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
+    context.addIssue({ code: "custom", message: "presentation frame IDs must be unique" });
+  const frameIds = new Set(frames.map((frame) => frame.id));
+  for (const node of spec.nodes) {
+    if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId))
+      context.addIssue({
+        code: "custom",
+        message: `node ${node.semanticId} references an unknown presentation frame`
+      });
   }
 });
 function parseVisualNoteSpec(input) {
@@ -14616,11 +14658,13 @@ function buildSpec(artifact, repositoryRoot, artifactId2, title, nodes, edges) {
     revision: 1,
     title,
     source: { root: repositoryRoot, commit: null },
+    presentation: artifact.presentation,
     nodes: nodes.map((node) => ({
       semanticId: node.semanticId,
       label: labelForClaim(node),
       status: node.status,
-      evidence: node.evidence
+      evidence: node.evidence,
+      visual: node.visual
     })),
     edges: edges.map((edge) => ({
       semanticId: edge.semanticId,
@@ -14716,7 +14760,7 @@ var templateClaimFields = {
   confidence: confidenceSchema,
   evidence: exports_external.array(evidenceReferenceSchema)
 };
-var templateNodeSchema = exports_external.object(templateClaimFields).strict();
+var templateNodeSchema = exports_external.object({ ...templateClaimFields, visual: nodeVisualSchema.optional() }).strict();
 var templateEdgeSchema = exports_external.object({
   ...templateClaimFields,
   from: semanticId2,
@@ -14728,6 +14772,7 @@ var templateArtifactSchema = exports_external.object({
   titleKo: exports_external.string().trim().min(1),
   titleEn: exports_external.string().trim().min(1),
   maxViewNodes: exports_external.number().int().min(3).max(8).default(6),
+  presentation: presentationSchema.optional(),
   nodes: exports_external.array(templateNodeSchema).min(1),
   edges: exports_external.array(templateEdgeSchema)
 }).strict().superRefine((artifact, context) => {
@@ -14747,6 +14792,15 @@ var templateArtifactSchema = exports_external.object({
       context.addIssue({
         code: "custom",
         message: `dangling template edge ${edge.semanticId} in ${artifact.artifactId}`
+      });
+    }
+  }
+  const frameIds = new Set((artifact.presentation?.frames ?? []).map((frame) => frame.id));
+  for (const node of artifact.nodes) {
+    if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId)) {
+      context.addIssue({
+        code: "custom",
+        message: `node ${node.semanticId} references an unknown frame in ${artifact.artifactId}`
       });
     }
   }
@@ -15165,25 +15219,41 @@ function wrapLabel(value) {
   return value.split(`
 `).flatMap((line) => {
     const characters = Array.from(line);
-    if (characters.length <= 24)
+    if (characters.length <= 32)
+      return [line];
+    const words = line.split(/\s+/u).filter(Boolean);
+    if (words.length <= 1)
       return [line];
     const lines = [];
-    for (let index = 0;index < characters.length; index += 24)
-      lines.push(characters.slice(index, index + 24).join(""));
+    let current = "";
+    for (const word of words) {
+      const candidate = current.length === 0 ? word : `${current} ${word}`;
+      if (Array.from(candidate).length <= 32 || current.length === 0) {
+        current = candidate;
+        continue;
+      }
+      lines.push(current);
+      current = word;
+    }
+    if (current.length > 0)
+      lines.push(current);
     return lines;
   }).join(`
 `);
 }
 
 // src/renderer-plan.ts
-var NODE_WIDTH = 280;
+var NODE_WIDTH = 300;
 var NODE_HEIGHT = 120;
-var COLUMN_STEP = 360;
-var ROW_STEP = 220;
+var COLUMN_STEP = 380;
+var ROW_STEP = 190;
 function stableElementId(artifactId2, semanticId3, role) {
   return createHash2("sha256").update(`${artifactId2}\x00${semanticId3}\x00${role}`).digest("base64url").slice(0, 8);
 }
-function placeNodes(spec) {
+function orderedNodes(spec) {
+  return [...spec.nodes].sort((left, right) => (left.visual?.order ?? Number.MAX_SAFE_INTEGER) - (right.visual?.order ?? Number.MAX_SAFE_INTEGER) || left.semanticId.localeCompare(right.semanticId));
+}
+function layeredPlacements(spec) {
   const ranks = new Map(spec.nodes.map((node) => [node.semanticId, 0]));
   const incoming = new Map(spec.nodes.map((node) => [node.semanticId, 0]));
   const outgoing = new Map(spec.nodes.map((node) => [node.semanticId, []]));
@@ -15201,10 +15271,9 @@ function placeNodes(spec) {
     for (const target of [...outgoing.get(id) ?? []].sort()) {
       ranks.set(target, Math.max(ranks.get(target) ?? 0, (ranks.get(id) ?? 0) + 1));
       incoming.set(target, (incoming.get(target) ?? 1) - 1);
-      if (incoming.get(target) === 0) {
+      if (incoming.get(target) === 0)
         ready.push(target);
-        ready.sort();
-      }
+      ready.sort();
     }
   }
   const fallbackRank = Math.max(0, ...ranks.values()) + 1;
@@ -15215,27 +15284,177 @@ function placeNodes(spec) {
   for (const [id, rank] of ranks)
     layers.set(rank, [...layers.get(rank) ?? [], id]);
   const placements = new Map;
-  for (const [rank, ids] of layers) {
+  for (const [rank, ids] of layers)
     for (const [row, id] of ids.sort().entries())
       placements.set(id, {
         x: 80 + rank * COLUMN_STEP,
-        y: 180 + row * ROW_STEP,
+        y: 180 + row * 220,
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT
+      });
+  return placements;
+}
+function timelinePlacements(spec) {
+  const placements = new Map;
+  const lanes = new Map([
+    ["main", 210],
+    ["exception", 470],
+    ["upstream", 80],
+    ["downstream", 600]
+  ]);
+  let fallbackOrder = 0;
+  for (const node of orderedNodes(spec)) {
+    const lane = node.visual?.lane ?? "main";
+    const index = node.visual?.order ?? fallbackOrder;
+    fallbackOrder += 1;
+    placements.set(node.semanticId, {
+      x: 80 + index * COLUMN_STEP,
+      y: lanes.get(lane) ?? 210,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT
+    });
+  }
+  return placements;
+}
+function framedPlacements(spec) {
+  const frames = [...spec.presentation?.frames ?? []].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  const nodes = new Map;
+  const placements = [];
+  for (const [column, frame] of frames.entries()) {
+    const members = orderedNodes(spec).filter((node) => node.visual?.frameId === frame.id);
+    const x2 = 60 + column * 440;
+    const height = Math.max(310, 110 + members.length * ROW_STEP);
+    placements.push({
+      id: frame.id,
+      label: frame.label,
+      category: frame.category,
+      x: x2,
+      y: 140,
+      width: 380,
+      height
+    });
+    for (const [row, node] of members.entries())
+      nodes.set(node.semanticId, {
+        x: x2 + 40,
+        y: 230 + row * ROW_STEP,
         width: NODE_WIDTH,
         height: NODE_HEIGHT
       });
   }
+  const unframed = orderedNodes(spec).filter((node) => !nodes.has(node.semanticId));
+  const x = 60 + frames.length * 440;
+  for (const [row, node] of unframed.entries())
+    nodes.set(node.semanticId, {
+      x,
+      y: 230 + row * ROW_STEP,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT
+    });
+  return { nodes, frames: placements };
+}
+function componentPlacements(spec) {
+  const frames = [...spec.presentation?.frames ?? []].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  const nodes = new Map;
+  const placements = [];
+  let y = 140;
+  for (const frame of frames) {
+    const members = orderedNodes(spec).filter((node) => node.visual?.frameId === frame.id);
+    const columns = Math.max(1, Math.min(3, members.length));
+    const rows = Math.max(1, Math.ceil(members.length / columns));
+    const width = 80 + columns * NODE_WIDTH + (columns - 1) * 60;
+    const height = Math.max(310, 110 + rows * ROW_STEP);
+    placements.push({
+      id: frame.id,
+      label: frame.label,
+      category: frame.category,
+      x: 60,
+      y,
+      width,
+      height
+    });
+    const lastRowCount = members.length % columns || columns;
+    const lastRowOffset = (columns - lastRowCount) * (NODE_WIDTH + 60) / 2;
+    for (const [index, node] of members.entries()) {
+      const row = Math.floor(index / columns);
+      const isLastRow = row === rows - 1;
+      nodes.set(node.semanticId, {
+        x: 100 + (isLastRow ? lastRowOffset : 0) + index % columns * (NODE_WIDTH + 60),
+        y: y + 90 + row * ROW_STEP,
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT
+      });
+    }
+    y += height + 60;
+  }
+  const unframed = orderedNodes(spec).filter((node) => !nodes.has(node.semanticId));
+  for (const [column, node] of unframed.entries())
+    nodes.set(node.semanticId, {
+      x: 60 + column * COLUMN_STEP,
+      y,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT
+    });
+  return { nodes, frames: placements };
+}
+function hubPlacements(spec) {
+  const placements = new Map;
+  const nodes = orderedNodes(spec);
+  const primary = nodes.filter((node) => node.visual?.emphasis === "primary");
+  const hubs = primary.length > 0 ? primary : nodes.slice(0, 1);
+  const hubIds = new Set(hubs.map((node) => node.semanticId));
+  for (const [row, hub] of hubs.entries())
+    placements.set(hub.semanticId, {
+      x: 560,
+      y: 170 + row * ROW_STEP,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT
+    });
+  const upstream = nodes.filter((node) => !hubIds.has(node.semanticId) && (node.visual?.lane ?? "upstream") === "upstream");
+  const downstream = nodes.filter((node) => !hubIds.has(node.semanticId) && node.visual?.lane !== "upstream");
+  for (const [row, node] of upstream.entries())
+    placements.set(node.semanticId, {
+      x: 80,
+      y: 170 + row * ROW_STEP,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT
+    });
+  for (const [row, node] of downstream.entries())
+    placements.set(node.semanticId, {
+      x: 1040,
+      y: 170 + row * ROW_STEP,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT
+    });
   return placements;
 }
+function connection(from, to) {
+  const fromCenter = [from.x + from.width / 2, from.y + from.height / 2];
+  const toCenter = [to.x + to.width / 2, to.y + to.height / 2];
+  if (Math.abs(toCenter[0] - fromCenter[0]) >= Math.abs(toCenter[1] - fromCenter[1])) {
+    const right = toCenter[0] >= fromCenter[0];
+    return [
+      [right ? from.x + from.width : from.x, fromCenter[1]],
+      [right ? to.x : to.x + to.width, toCenter[1]]
+    ];
+  }
+  const down = toCenter[1] >= fromCenter[1];
+  return [
+    [fromCenter[0], down ? from.y + from.height : from.y],
+    [toCenter[0], down ? to.y : to.y + to.height]
+  ];
+}
 function planScene(spec, idFactory = stableElementId) {
+  const layout = spec.presentation?.layout ?? "layered";
+  const framed = layout === "components" ? componentPlacements(spec) : ["frames", "trust-boundary"].includes(layout) ? framedPlacements(spec) : undefined;
+  const placements = framed?.nodes ?? (layout === "timeline" ? timelinePlacements(spec) : layout === "hub" ? hubPlacements(spec) : layeredPlacements(spec));
   const ids = new Set;
   const elements = [];
-  const placements = placeNodes(spec);
   const add = (fields) => {
     const id = idFactory(spec.artifactId, fields.semanticId, fields.role);
     if (ids.has(id))
       throw new CollisionError(`Excalidraw element ID collision: ${id}`);
     ids.add(id);
-    const { status, evidence, ...element } = fields;
+    const { status, category = "neutral", evidence, ...element } = fields;
     elements.push({
       ...element,
       id,
@@ -15247,63 +15466,94 @@ function planScene(spec, idFactory = stableElementId) {
         elementRole: fields.role,
         revision: spec.revision,
         status,
+        category,
         evidence
       }
     });
   };
-  const nodes = [...spec.nodes].sort((left, right) => left.semanticId.localeCompare(right.semanticId));
-  for (const edge of [...spec.edges].sort((left, right) => left.semanticId.localeCompare(right.semanticId))) {
+  for (const frame of framed?.frames ?? []) {
+    add({
+      semanticId: `frame-${frame.id}`,
+      role: "frame-shape",
+      type: "rectangle",
+      ...frame,
+      text: null,
+      points: [],
+      status: "fact",
+      category: frame.category,
+      evidence: []
+    });
+    add({
+      semanticId: `frame-${frame.id}`,
+      role: "frame-label",
+      type: "text",
+      x: frame.x + 24,
+      y: frame.y + 20,
+      width: frame.width - 48,
+      height: 44,
+      text: frame.label,
+      points: [],
+      status: "fact",
+      category: frame.category,
+      evidence: []
+    });
+  }
+  const edges = [...spec.edges].sort((a, b) => a.semanticId.localeCompare(b.semanticId));
+  for (const [edgeIndex, edge] of edges.entries()) {
     const from = placements.get(edge.from);
     const to = placements.get(edge.to);
     if (from === undefined || to === undefined)
       throw new TypeError("validated edge endpoint missing");
-    const start = [from.x + from.width / 2, from.y + from.height / 2];
-    const end = [to.x + to.width / 2, to.y + to.height / 2];
-    const x = start[0];
-    const y = start[1];
+    const [start, end] = connection(from, to);
     const points = [
       [0, 0],
       [end[0] - start[0], end[1] - start[1]]
     ];
+    const stagger = [-24, 0, 24][edgeIndex % 3] ?? 0;
+    const mostlyHorizontal = Math.abs(end[0] - start[0]) >= Math.abs(end[1] - start[1]);
     add({
       semanticId: edge.semanticId,
       role: "edge-line",
       type: "arrow",
-      x,
-      y,
-      width: Math.abs(end[0] - start[0]),
-      height: Math.abs(end[1] - start[1]),
+      x: start[0],
+      y: start[1],
+      width: Math.abs(points[1][0]),
+      height: Math.abs(points[1][1]),
       text: null,
       points,
       status: edge.status,
+      category: "neutral",
       evidence: edge.evidence
     });
     add({
       semanticId: edge.semanticId,
       role: "edge-label",
       type: "text",
-      x: (start[0] + end[0]) / 2 - 60,
-      y: (start[1] + end[1]) / 2 - 18,
-      width: 120,
-      height: 36,
+      x: (start[0] + end[0]) / 2 - 80 + (mostlyHorizontal ? 0 : stagger),
+      y: (start[1] + end[1]) / 2 - 20 + (mostlyHorizontal ? stagger : 0),
+      width: 160,
+      height: 40,
       text: wrapLabel(edge.label),
       points: [],
       status: edge.status,
+      category: "neutral",
       evidence: edge.evidence
     });
   }
-  for (const node of nodes) {
+  for (const node of orderedNodes(spec)) {
     const placement = placements.get(node.semanticId);
     if (placement === undefined)
       throw new TypeError("node placement missing");
+    const category = node.visual?.category ?? "neutral";
     add({
       semanticId: node.semanticId,
       role: "node-shape",
-      type: "rectangle",
+      type: node.visual?.shape ?? "rectangle",
       ...placement,
       text: null,
       points: [],
       status: node.status,
+      category,
       evidence: node.evidence
     });
     add({
@@ -15311,26 +15561,29 @@ function planScene(spec, idFactory = stableElementId) {
       role: "node-label",
       type: "text",
       x: placement.x + 20,
-      y: placement.y + 32,
+      y: placement.y + 24,
       width: placement.width - 40,
-      height: placement.height - 64,
+      height: placement.height - 48,
       text: wrapLabel(node.label),
       points: [],
       status: node.status,
+      category,
       evidence: node.evidence
     });
   }
+  const right = Math.max(520, ...[...placements.values()].map((placement) => placement.x + placement.width - 80));
   add({
     semanticId: "artifact",
     role: "title",
     type: "text",
     x: 80,
-    y: 60,
-    width: Math.max(1000, ...[...placements.values()].map((placement) => placement.x + placement.width - 80)),
-    height: 60,
+    y: 50,
+    width: right,
+    height: 64,
     text: spec.title,
     points: [],
     status: "question",
+    category: "neutral",
     evidence: []
   });
   return {
@@ -15343,6 +15596,16 @@ function planScene(spec, idFactory = stableElementId) {
 }
 
 // src/scene-bootstrap.ts
+var CATEGORY_PALETTE = {
+  cloudflare: { stroke: "#e8590c", background: "#fff4e6" },
+  aws: { stroke: "#f08c00", background: "#fff9db" },
+  external: { stroke: "#64748b", background: "#f8fafc" },
+  data: { stroke: "#1971c2", background: "#e7f5ff" },
+  runtime: { stroke: "#7950f2", background: "#f3f0ff" },
+  security: { stroke: "#2f9e44", background: "#ebfbee" },
+  risk: { stroke: "#e03131", background: "#fff5f5" },
+  neutral: { stroke: "#475569", background: "#f8fafc" }
+};
 function hashId(value) {
   let hash2 = 0;
   for (const character of value)
@@ -15355,56 +15618,60 @@ function sceneFromSpec(spec, source) {
     type: "excalidraw",
     version: 2,
     source,
-    elements: plan.elements.map((element, index) => ({
-      id: element.id,
-      type: element.type,
-      x: element.x,
-      y: element.y,
-      width: element.width,
-      height: element.height,
-      angle: 0,
-      strokeColor: element.customData.status === "fact" ? "#1971c2" : element.customData.status === "inference" ? "#e67700" : "#7048e8",
-      backgroundColor: element.type === "rectangle" ? element.customData.status === "fact" ? "#d0ebff" : element.customData.status === "inference" ? "#fff3bf" : "#e5dbff" : "transparent",
-      fillStyle: "solid",
-      strokeWidth: element.role === "title" ? 1 : 2,
-      strokeStyle: element.customData.status === "inference" ? "dashed" : "solid",
-      roughness: 0,
-      opacity: 100,
-      roundness: null,
-      seed: hashId(`${element.id}:seed`),
-      version: 1,
-      versionNonce: hashId(`${element.id}:nonce`),
-      updated: 1700000000000 + index,
-      isDeleted: false,
-      groupIds: [],
-      boundElements: [],
-      link: null,
-      locked: false,
-      frameId: null,
-      hasTextLink: false,
-      ...element.type === "text" ? {
-        text: element.text ?? "",
-        fontSize: element.role === "title" ? 32 : element.role === "edge-label" ? 16 : 20,
-        fontFamily: 2,
-        textAlign: "center",
-        verticalAlign: "middle",
-        containerId: null,
-        originalText: element.text ?? "",
-        rawText: element.text ?? "",
-        lineHeight: 1.25,
-        autoResize: false
-      } : {},
-      ...element.type === "arrow" ? {
-        points: element.points.map((point) => [...point]),
-        elbowed: false,
-        lastCommittedPoint: null,
-        startBinding: null,
-        endBinding: null,
-        startArrowhead: null,
-        endArrowhead: "arrow"
-      } : {},
-      customData: structuredClone(element.customData)
-    })),
+    elements: plan.elements.map((element, index) => {
+      const palette = CATEGORY_PALETTE[element.customData.category];
+      const isShape = ["rectangle", "ellipse", "diamond"].includes(element.type);
+      return {
+        id: element.id,
+        type: element.type,
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+        angle: 0,
+        strokeColor: palette.stroke,
+        backgroundColor: isShape ? palette.background : "transparent",
+        fillStyle: "solid",
+        strokeWidth: element.role === "title" ? 1 : 2,
+        strokeStyle: element.customData.status === "inference" ? "dashed" : "solid",
+        roughness: element.role === "edge-line" ? 1 : element.role.startsWith("frame") ? 0 : 0.7,
+        opacity: element.role === "frame-shape" ? 32 : 100,
+        roundness: null,
+        seed: hashId(`${element.id}:seed`),
+        version: 1,
+        versionNonce: hashId(`${element.id}:nonce`),
+        updated: 1700000000000 + index,
+        isDeleted: false,
+        groupIds: element.role === "title" || element.role.startsWith("frame") ? [] : [`visual-note:${spec.artifactId}:${element.semanticId}`],
+        boundElements: [],
+        link: null,
+        locked: false,
+        frameId: null,
+        hasTextLink: false,
+        ...element.type === "text" ? {
+          text: element.text ?? "",
+          fontSize: element.role === "title" ? 34 : element.role === "frame-label" ? 24 : element.role === "edge-label" ? 13 : 20,
+          fontFamily: element.role === "edge-label" ? 2 : 1,
+          textAlign: element.role === "frame-label" ? "left" : "center",
+          verticalAlign: "middle",
+          containerId: null,
+          originalText: element.text ?? "",
+          rawText: element.text ?? "",
+          lineHeight: 1.25,
+          autoResize: false
+        } : {},
+        ...element.type === "arrow" ? {
+          points: element.points.map((point) => [...point]),
+          elbowed: false,
+          lastCommittedPoint: null,
+          startBinding: null,
+          endBinding: null,
+          startArrowhead: null,
+          endArrowhead: "arrow"
+        } : {},
+        customData: structuredClone(element.customData)
+      };
+    }),
     appState: { gridSize: null, viewBackgroundColor: "#ffffff" },
     files: {}
   };
@@ -17547,9 +17814,322 @@ function runSpecCommand(command, argv) {
   writeResult(result, options.json);
 }
 
+// src/session-export.ts
+import {
+  lstatSync as lstatSync8,
+  mkdirSync as mkdirSync8,
+  mkdtempSync as mkdtempSync2,
+  readdirSync as readdirSync4,
+  readFileSync as readFileSync14,
+  realpathSync,
+  rmSync as rmSync5,
+  writeFileSync as writeFileSync7
+} from "fs";
+import { dirname as dirname9, isAbsolute as isAbsolute7, join as join14, normalize as normalize6 } from "path";
+
+// src/svg-gallery.ts
+var CARD_PADDING = 32;
+var CAPTION_HEIGHT = 48;
+var CATEGORY_PALETTE2 = {
+  cloudflare: { fill: "#fff4e6", stroke: "#e8590c", text: "#7c2d12" },
+  aws: { fill: "#fff9db", stroke: "#f08c00", text: "#78350f" },
+  external: { fill: "#f8fafc", stroke: "#64748b", text: "#334155" },
+  data: { fill: "#e7f5ff", stroke: "#1971c2", text: "#0c4a6e" },
+  runtime: { fill: "#f3f0ff", stroke: "#7950f2", text: "#4c1d95" },
+  security: { fill: "#ebfbee", stroke: "#2f9e44", text: "#14532d" },
+  risk: { fill: "#fff5f5", stroke: "#e03131", text: "#7f1d1d" },
+  neutral: { fill: "#f8fafc", stroke: "#475569", text: "#0f172a" }
+};
+function escapeXml(value) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+}
+function textLines(text, x, fontSize, fill) {
+  return text.split(`
+`).map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : fontSize + 4}" fill="${fill}">${escapeXml(line)}</tspan>`).join("");
+}
+function paletteFor(category) {
+  return CATEGORY_PALETTE2[category];
+}
+function shapeMarkup(type, x, y, width, height, palette, dashArray, isFrame) {
+  const shared = `fill="${palette.fill}" fill-opacity="${isFrame ? "0.55" : "1"}" stroke="${palette.stroke}" stroke-width="${isFrame ? "2" : "3"}"${dashArray === null ? "" : ` stroke-dasharray="${dashArray}"`} vector-effect="non-scaling-stroke"`;
+  if (type === "ellipse")
+    return `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" ${shared} filter="url(#soft-shadow)"/>`;
+  if (type === "diamond") {
+    const points = `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`;
+    return `<polygon points="${points}" ${shared} stroke-linejoin="round" filter="url(#soft-shadow)"/>`;
+  }
+  return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${isFrame ? "28" : "18"}" ${shared}${isFrame ? "" : ' filter="url(#soft-shadow)"'}/>`;
+}
+function styleMap(styles) {
+  return new Map(styles.map((style) => [style.semanticId, style]));
+}
+function sceneSize(view) {
+  const plan = planScene(view.spec);
+  return {
+    width: Math.max(...plan.elements.map((element) => element.x + element.width), 0) + CARD_PADDING,
+    height: Math.max(...plan.elements.map((element) => element.y + element.height), 0) + CARD_PADDING
+  };
+}
+function renderCard(view, originX, originY) {
+  const plan = planScene(view.spec);
+  const styles = styleMap(view.styles);
+  const size = sceneSize(view);
+  const pieces = [
+    `<rect x="${originX}" y="${originY}" width="${size.width + CARD_PADDING}" height="${size.height + CAPTION_HEIGHT}" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>`,
+    `<text x="${originX + 24}" y="${originY + 29}" font-family="ui-sans-serif, sans-serif" font-size="12" font-weight="700" fill="#64748b">${escapeXml(`${view.kind} \xB7 ${view.viewId}`)}</text>`
+  ];
+  for (const element of plan.elements) {
+    const style = styles.get(element.semanticId) ?? {
+      fill: "#ffffff",
+      stroke: "#334155",
+      text: "#0f172a",
+      dashArray: null,
+      badge: "TITLE"
+    };
+    const palette = paletteFor(element.customData.category);
+    const x = originX + element.x;
+    const y = originY + CAPTION_HEIGHT + element.y;
+    if (["rectangle", "ellipse", "diamond"].includes(element.type)) {
+      pieces.push(shapeMarkup(element.type, x, y, element.width, element.height, palette, element.customData.status === "inference" ? "10 7" : style.dashArray, element.role === "frame-shape"));
+      continue;
+    }
+    if (element.type === "arrow") {
+      const end = element.points[1];
+      if (end === undefined)
+        throw new TypeError(`missing arrow endpoint for ${element.id}`);
+      pieces.push(`<line x1="${x}" y1="${y}" x2="${x + end[0]}" y2="${y + end[1]}" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrow)"${element.customData.status === "inference" ? ' stroke-dasharray="10 7"' : ""}/>`);
+      continue;
+    }
+    if (element.text === null)
+      continue;
+    const fontSize = element.role === "title" ? 30 : element.role === "frame-label" ? 20 : element.role === "edge-label" ? 12 : 16;
+    const fontWeight = ["title", "frame-label", "node-label"].includes(element.role) ? "700" : "500";
+    if (element.role === "edge-label")
+      pieces.push(`<rect x="${x - 6}" y="${y}" width="${element.width + 12}" height="${element.height}" rx="10" fill="#ffffff" fill-opacity="0.92"/>`);
+    const lines = element.text.split(`
+`).length;
+    const lineHeight = fontSize + 4;
+    const centered = ["node-label", "edge-label"].includes(element.role);
+    const textX = centered ? x + element.width / 2 : x;
+    const textY = centered ? y + (element.height - lines * lineHeight) / 2 + fontSize : y + fontSize;
+    pieces.push(`<text x="${textX}" y="${textY}" text-anchor="${centered ? "middle" : "start"}" font-family="Virgil, 'Comic Sans MS', ui-rounded, sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${palette.text}">${textLines(element.text, textX, fontSize, palette.text)}</text>`);
+  }
+  return pieces.join("");
+}
+function svgDocument(width, height, content) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155" />
+    </marker>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.10" />
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#f8fafc" />
+  ${content}
+</svg>`;
+}
+function renderViewSvg(view) {
+  const size = sceneSize(view);
+  const width = size.width + CARD_PADDING * 3;
+  const height = size.height + CAPTION_HEIGHT + CARD_PADDING * 3;
+  return {
+    width,
+    height,
+    svg: svgDocument(width, height, renderCard(view, CARD_PADDING, CARD_PADDING))
+  };
+}
+
+// src/session-export.ts
+var projectSlug = exports_external.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+var kindOrder = new Map([
+  ["project-map", 0],
+  ["system-architecture", 1],
+  ["container-architecture", 2],
+  ["workflow", 3],
+  ["data-flow", 4],
+  ["trust-boundary", 5],
+  ["component-architecture", 6],
+  ["api-contract", 7],
+  ["adr", 8],
+  ["code-exploration", 9]
+]);
+function realDirectory(path, label) {
+  if (!isAbsolute7(path) || normalize6(path) !== path || path === "/") {
+    throw new InputError(`${label} must be a normalized absolute non-root path`);
+  }
+  let resolved;
+  try {
+    resolved = realpathSync(path);
+  } catch (error51) {
+    throw new InputError(`${label} does not exist: ${path}`, { cause: error51 });
+  }
+  if (!lstatSync8(resolved).isDirectory())
+    throw new InputError(`${label} must be a directory`);
+  return resolved;
+}
+function readSpecs(specDirectory) {
+  const specs = readdirSync4(specDirectory, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "source.json").map((entry) => {
+    const path = join14(specDirectory, entry.name);
+    const spec = parseVisualNoteSpec(JSON.parse(readFileSync14(path, "utf8")));
+    if (`${spec.artifactId}.json` !== entry.name) {
+      throw new InputError(`spec filename must match artifactId: ${entry.name}`);
+    }
+    for (const claim of [...spec.nodes, ...spec.edges]) {
+      if (claim.status === "fact")
+        resolveEvidence(spec.source.root, claim.evidence);
+    }
+    return spec;
+  }).sort((left, right) => (kindOrder.get(left.kind) ?? 99) - (kindOrder.get(right.kind) ?? 99) || left.artifactId.localeCompare(right.artifactId));
+  if (specs.length === 0)
+    throw new InputError(`no visual-note specs found in ${specDirectory}`);
+  if (new Set(specs.map((spec) => spec.artifactId)).size !== specs.length) {
+    throw new InputError("artifactIds must be unique across the exported series");
+  }
+  return specs;
+}
+function confidenceFor(status) {
+  if (status === "fact")
+    return "high";
+  if (status === "inference")
+    return "medium";
+  return "unknown";
+}
+function viewFor(spec) {
+  return {
+    viewId: spec.artifactId,
+    artifactId: spec.artifactId,
+    kind: spec.kind,
+    title: spec.title,
+    spec,
+    relatedViewIds: [],
+    styles: [...spec.nodes, ...spec.edges].map((claim) => styleForClaim(claim.semanticId, claim.status, confidenceFor(claim.status))),
+    split: {
+      coreNodeIds: spec.nodes.map((node) => node.semanticId),
+      duplicateNodeIds: [],
+      edgeIds: spec.edges.map((edge) => edge.semanticId)
+    }
+  };
+}
+function evidenceText(spec) {
+  return [...spec.nodes, ...spec.edges].map((claim) => {
+    const evidence = claim.evidence.map((reference) => {
+      const lines = reference.lineStart === undefined ? "" : `:${reference.lineStart}${reference.lineEnd === undefined ? "" : `-${reference.lineEnd}`}`;
+      const symbol2 = reference.symbol === undefined ? "" : `#${reference.symbol}`;
+      return `\`${reference.path}${lines}${symbol2}\``;
+    }).join(", ");
+    return `- \`${claim.semanticId}\` **${claim.status}** \u2014 ${claim.label.replaceAll(`
+`, " \xB7 ")}${evidence.length === 0 ? "" : ` \u2014 ${evidence}`}`;
+  }).join(`
+`);
+}
+function noteFor(specs, index) {
+  const spec = specs[index];
+  if (spec === undefined)
+    throw new TypeError("missing series spec");
+  const previous = specs[index - 1];
+  const next = specs[index + 1];
+  const navigation = [
+    previous === undefined ? null : `[\u2190 ${previous.title}](./${previous.artifactId}.md)`,
+    "[\uC2DC\uB9AC\uC988 \uD648](./index.md)",
+    next === undefined ? null : `[${next.title} \u2192](./${next.artifactId}.md)`
+  ].filter((value) => value !== null).join(" \xB7 ");
+  return `---
+artifactId: ${spec.artifactId}
+kind: ${spec.kind}
+revision: ${spec.revision}
+---
+
+# ${spec.title}
+
+${navigation}
+
+![${spec.title}](./${spec.artifactId}.svg)
+
+[Excalidraw \uC6D0\uBCF8](./${spec.artifactId}.excalidraw.md) \xB7 [\uAC80\uC99D \uC2A4\uD399](./specs/${spec.artifactId}.json)
+
+- Source: \`${spec.source.root}\`
+- Commit: \`${spec.source.commit ?? "uncommitted"}\`
+
+## Evidence status
+
+${evidenceText(spec)}
+`;
+}
+function indexFor(project, specs) {
+  const sections = specs.map((spec, index) => `## ${index + 1}. ${spec.title}
+
+[\uC0C1\uC138 \uB178\uD2B8 \uC5F4\uAE30](./${spec.artifactId}.md)
+
+![${spec.title}](./${spec.artifactId}.svg)`).join(`
+
+`);
+  return `# ${project} visual architecture series
+
+\uD55C \uC7A5\uC5D0 \uBAA8\uB4E0 \uB0B4\uC6A9\uC744 \uC555\uCD95\uD558\uC9C0 \uC54A\uACE0, \uC11C\uB85C \uB2E4\uB978 \uC9C8\uBB38\uC5D0 \uB2F5\uD558\uB294 \uC5F0\uACB0\uB41C \uC2DC\uB9AC\uC988\uB85C \uAD6C\uC131\uD588\uB2E4.
+
+${sections}
+
+SVG\uB294 \uC77D\uAE30 \uC804\uC6A9 \uBBF8\uB9AC\uBCF4\uAE30\uC774\uBA70, \uAC19\uC740 \uC774\uB984\uC758 \`.excalidraw.md\` \uD30C\uC77C\uC774 \uD3B8\uC9D1 \uAC00\uB2A5\uD55C \uC6D0\uBCF8\uC774\uB2E4.
+`;
+}
+function exportSeries(input) {
+  const sessionRoot = realDirectory(input.sessionRoot, "session root");
+  const specDirectory = realDirectory(input.specDirectory, "spec directory");
+  const project = projectSlug.parse(input.project);
+  const specs = readSpecs(specDirectory);
+  const tempRoot = mkdtempSync2(join14(sessionRoot, ".visual-learning-export-"));
+  const stageProject = join14(tempRoot, project);
+  const files = [];
+  const write = (relativePath, bytes) => {
+    const path = join14(stageProject, relativePath);
+    mkdirSync8(dirname9(path), { recursive: true });
+    writeFileSync7(path, bytes);
+    files.push(relativePath);
+  };
+  try {
+    write("index.md", indexFor(project, specs));
+    for (const [index, spec] of specs.entries()) {
+      const view = viewFor(spec);
+      write(`${spec.artifactId}.md`, noteFor(specs, index));
+      write(`${spec.artifactId}.svg`, `${renderViewSvg(view).svg}
+`);
+      write(`${spec.artifactId}.excalidraw.md`, encodeSceneToMarkdown(sceneFromSpec(spec, "visual-learning/session-export")));
+      write(`specs/${spec.artifactId}.json`, jsonBytes(spec));
+    }
+    const manifest = {
+      schemaVersion: 1,
+      project,
+      artifacts: specs.map((spec) => ({
+        artifactId: spec.artifactId,
+        kind: spec.kind,
+        revision: spec.revision
+      })),
+      files: [...files].sort().map((relativePath) => ({
+        relativePath,
+        sha256: sha256(readFileSync14(join14(stageProject, relativePath)))
+      }))
+    };
+    write("manifest.json", jsonBytes(manifest));
+    const targetProject = join14(sessionRoot, "docs", "vl", "projects", project);
+    const published = publishProjectDirectory(stageProject, targetProject);
+    return {
+      operation: "export-series",
+      status: published.status,
+      outputRoot: targetProject,
+      artifacts: specs.map((spec) => spec.artifactId),
+      files: [...files].sort()
+    };
+  } finally {
+    rmSync5(tempRoot, { recursive: true, force: true });
+  }
+}
+
 // src/cli.ts
 var officialCli = "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli";
-var evidenceRoot = "/Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault";
+var evidenceRoot = join15(process.cwd(), ".omo/evidence/agent-visual-learning-vault");
 var help = `visual-note 0.1.0
 Usage: visual-note <command> [options]
 
@@ -17558,6 +18138,7 @@ Commands:
   init       initialize project metadata from a read-only local source
   bootstrap  stage a repeatable study-workflow sample bundle for a source
   create     validate and publish a new normalized visual-note spec
+  export-series  publish a linked series under <session-root>/docs/vl/projects
   extend     validate an extension spec contract without rendering
   refresh    validate a refresh spec contract without rendering
   validate   validate a strict visual-note specification
@@ -17623,6 +18204,15 @@ function run4(command, argv) {
       writeResult(result, options.json);
       return;
     }
+    case "export-series": {
+      const options = parseOptions(argv, new Set(["--session-root", "--project", "--spec-dir"]));
+      writeResult(exportSeries({
+        sessionRoot: required2(options, "--session-root"),
+        project: required2(options, "--project"),
+        specDirectory: required2(options, "--spec-dir")
+      }), options.json);
+      return;
+    }
     case "extend":
     case "refresh":
     case "restore":
@@ -17659,7 +18249,7 @@ function run4(command, argv) {
       writeResult({
         contractVersion: 1,
         sentinel: "VISUAL_LEARNING_CONTRACT_OK",
-        fixtureSha256: sha256(readFileSync14(fixture))
+        fixtureSha256: sha256(readFileSync15(fixture))
       }, options.json);
       return;
     }

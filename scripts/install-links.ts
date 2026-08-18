@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
+import { realpathSync } from "node:fs";
 import { join, normalize, relative, resolve } from "node:path";
 
-const canonicalDefault = "/Users/billionjaepyo/.agents/skills/visual-learning";
+const canonicalDefault = realpathSync(join(import.meta.dir, ".."));
 const helper = join(import.meta.dir, "internal/install-link.py");
 const clientParents = {
   senpi: ".senpi/agent/skills",

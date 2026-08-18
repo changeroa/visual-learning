@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { InputError } from "../src/errors";
 import { generateTemplateFixture, loadTemplateFixture } from "../src/template-fixture";
+import { generateTemplateBundle } from "../src/template-generate";
+import { parseTemplateBundle } from "../src/template-schema";
 
 const root = join(import.meta.dir, "fixtures/kinds");
 
@@ -70,5 +72,51 @@ describe("Todo 8 template generation", () => {
     expect(missing).toThrow(InputError);
     expect(absentSymbol).toThrow(InputError);
     expect(malformed).toThrow(InputError);
+  });
+
+  test("preserves presentation frames and node visual metadata", () => {
+    const bundle = parseTemplateBundle({
+      schemaVersion: 1,
+      bundleId: "design-system",
+      project: "atlas-shop",
+      repositoryRoot: "repo",
+      artifacts: [
+        {
+          artifactId: "system-overview",
+          kind: "system-architecture",
+          titleKo: "시스템 개요",
+          titleEn: "System overview",
+          maxViewNodes: 6,
+          presentation: {
+            layout: "frames",
+            frames: [{ id: "cloudflare", label: "Cloudflare", category: "cloudflare", order: 0 }],
+          },
+          nodes: [
+            {
+              semanticId: "api-worker",
+              identifier: "ApiWorker",
+              explanationKo: "요청 처리",
+              status: "inference",
+              confidence: "medium",
+              evidence: [],
+              visual: {
+                category: "cloudflare",
+                frameId: "cloudflare",
+                shape: "rectangle",
+                emphasis: "primary",
+                order: 0,
+              },
+            },
+          ],
+          edges: [],
+        },
+      ],
+    });
+
+    const generated = generateTemplateBundle(bundle, join(root, "gallery/repo"));
+    expect(generated.views[0]?.spec.presentation?.layout).toBe("frames");
+    expect(generated.views[0]?.spec.nodes[0]?.visual).toEqual(
+      expect.objectContaining({ category: "cloudflare", frameId: "cloudflare" }),
+    );
   });
 });

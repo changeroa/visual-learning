@@ -20,13 +20,14 @@ function run(args: readonly string[]): {
 }
 
 describe("visual-note CLI", () => {
-  test("help exposes all ten contract commands", () => {
+  test("help exposes the complete command surface", () => {
     // Given
     const commands = [
       "preflight",
       "init",
       "bootstrap",
       "create",
+      "export-series",
       "extend",
       "refresh",
       "validate",
