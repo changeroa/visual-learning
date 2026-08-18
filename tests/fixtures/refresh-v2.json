@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "refresh-fixture",
+  "kind": "workflow",
+  "revision": 2,
+  "title": "Refresh Fixture v2",
+  "source": {
+    "root": "/tmp/source",
+    "commit": null
+  },
+  "nodes": [
+    {
+      "semanticId": "service",
+      "label": "Service",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/service.ts",
+          "lineStart": 1
+        }
+      ]
+    }
+  ],
+  "edges": []
+}

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "atlas-learning-invalid-missing",
+  "project": "atlas-shop-invalid",
+  "repositoryRoot": "repo",
+  "artifacts": [
+    {
+      "artifactId": "missing-evidence",
+      "kind": "project-map",
+      "titleKo": "누락 증거",
+      "titleEn": "Missing Evidence",
+      "nodes": [
+        {
+          "semanticId": "missing-node",
+          "identifier": "MissingFile",
+          "explanationKo": "없는 파일 참조",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/missing.ts", "symbol": "MissingFile" }]
+        },
+        {
+          "semanticId": "present-node",
+          "identifier": "OrdersRouter",
+          "explanationKo": "정상 노드",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "missing-edge",
+          "from": "missing-node",
+          "to": "present-node",
+          "identifier": "connects",
+          "explanationKo": "실패 연결",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ]
+    }
+  ]
+}

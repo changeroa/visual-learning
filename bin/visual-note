@@ -1,0 +1,2 @@
+#!/bin/sh
+exec bun "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/src/cli.ts" "$@"

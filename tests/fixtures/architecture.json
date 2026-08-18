@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "renderer-failure",
+  "kind": "system-architecture",
+  "revision": 1,
+  "title": "Renderer Failure Fixture",
+  "source": { "root": "/tmp/fixture-source", "commit": null },
+  "nodes": [
+    { "semanticId": "client", "label": "Client", "status": "question", "evidence": [] },
+    { "semanticId": "server", "label": "Server", "status": "question", "evidence": [] }
+  ],
+  "edges": [
+    {
+      "semanticId": "client-to-server",
+      "from": "client",
+      "to": "server",
+      "label": "calls",
+      "status": "question",
+      "evidence": []
+    }
+  ]
+}

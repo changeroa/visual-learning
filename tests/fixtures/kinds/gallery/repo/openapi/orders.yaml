@@ -1,0 +1,12 @@
+openapi: 3.1.0
+info:
+  title: Atlas Shop Orders API
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+      responses:
+        '201':
+          description: Created

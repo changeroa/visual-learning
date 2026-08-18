@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "contract-fixture",
+  "kind": "project-map",
+  "revision": 1,
+  "title": "Contract fixture",
+  "source": { "root": "/tmp/fixture-source", "commit": null },
+  "nodes": [
+    {
+      "semanticId": "entry",
+      "label": "entry",
+      "status": "question",
+      "evidence": []
+    }
+  ],
+  "edges": []
+}

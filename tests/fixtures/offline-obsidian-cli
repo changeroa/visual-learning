@@ -1,0 +1,26 @@
+#!/bin/sh
+# Test-only offline Obsidian CLI stub: filesystem-only canned responses, no app launch, no network.
+key="${2:-}"
+case "$key" in
+  vault)
+    case "${3:-}" in
+      info=path)
+        printf '%s\n' "${OFFLINE_STUB_VAULT_PATH:?offline stub requires OFFLINE_STUB_VAULT_PATH}"
+        exit 0
+        ;;
+    esac
+    ;;
+  plugins:enabled)
+    printf '%s\n' '[{"id":"obsidian-excalidraw-plugin","version":"2.26.4"}]'
+    exit 0
+    ;;
+  eval)
+    printf '%s\n' '{"sentinel":"VISUAL_NOTE_EXCALIDRAW_READY","loaded":true,"id":"obsidian-excalidraw-plugin","automatePresent":true,"getAPI":true,"scriptEnginePresent":true}'
+    exit 0
+    ;;
+  open)
+    exit 0
+    ;;
+esac
+printf 'offline-obsidian-cli: unsupported command: %s\n' "$key" >&2
+exit 1

@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "atlas-learning-dense",
+  "project": "atlas-shop-dense",
+  "repositoryRoot": "repo",
+  "artifacts": [
+    {
+      "artifactId": "dense-call-map",
+      "kind": "code-exploration",
+      "titleKo": "Dense 코드 호출 맵",
+      "titleEn": "Dense Call Map",
+      "maxViewNodes": 6,
+      "nodes": [
+        {
+          "semanticId": "node-a",
+          "identifier": "OrdersRouter",
+          "explanationKo": "호출 1",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "node-b",
+          "identifier": "createOrder()",
+          "explanationKo": "호출 2",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "createOrder" }]
+        },
+        {
+          "semanticId": "node-c",
+          "identifier": "CheckoutService",
+          "explanationKo": "호출 3",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "node-d",
+          "identifier": "submitOrder()",
+          "explanationKo": "호출 4",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "submitOrder" }]
+        },
+        {
+          "semanticId": "node-e",
+          "identifier": "authorizePayment()",
+          "explanationKo": "호출 5",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/integrations/PaymentGateway.ts", "symbol": "authorizePayment" }
+          ]
+        },
+        {
+          "semanticId": "node-f",
+          "identifier": "saveOrder()",
+          "explanationKo": "호출 6",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "node-g",
+          "identifier": "publishOrderCreated()",
+          "explanationKo": "호출 7",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/services/CheckoutService.ts", "symbol": "publishOrderCreated" }
+          ]
+        },
+        {
+          "semanticId": "node-h",
+          "identifier": "handleOrderCreated()",
+          "explanationKo": "호출 8",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "handleOrderCreated" }
+          ]
+        },
+        {
+          "semanticId": "node-i",
+          "identifier": "orders",
+          "explanationKo": "호출 9",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "db/schema.sql", "lineStart": 1, "lineEnd": 4 }]
+        },
+        {
+          "semanticId": "node-j",
+          "identifier": "order-created",
+          "explanationKo": "호출 10",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "edge-a-b",
+          "from": "node-a",
+          "to": "node-b",
+          "identifier": "step-1",
+          "explanationKo": "연결 1",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "createOrder" }]
+        },
+        {
+          "semanticId": "edge-b-c",
+          "from": "node-b",
+          "to": "node-c",
+          "identifier": "step-2",
+          "explanationKo": "연결 2",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "edge-c-d",
+          "from": "node-c",
+          "to": "node-d",
+          "identifier": "step-3",
+          "explanationKo": "연결 3",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "submitOrder" }]
+        },
+        {
+          "semanticId": "edge-d-e",
+          "from": "node-d",
+          "to": "node-e",
+          "identifier": "step-4",
+          "explanationKo": "연결 4",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/integrations/PaymentGateway.ts", "symbol": "authorizePayment" }
+          ]
+        },
+        {
+          "semanticId": "edge-e-f",
+          "from": "node-e",
+          "to": "node-f",
+          "identifier": "step-5",
+          "explanationKo": "연결 5",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "edge-f-g",
+          "from": "node-f",
+          "to": "node-g",
+          "identifier": "step-6",
+          "explanationKo": "연결 6",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/services/CheckoutService.ts", "symbol": "publishOrderCreated" }
+          ]
+        },
+        {
+          "semanticId": "edge-g-h",
+          "from": "node-g",
+          "to": "node-h",
+          "identifier": "step-7",
+          "explanationKo": "연결 7",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "handleOrderCreated" }
+          ]
+        },
+        {
+          "semanticId": "edge-h-i",
+          "from": "node-h",
+          "to": "node-i",
+          "identifier": "step-8",
+          "explanationKo": "연결 8",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "db/schema.sql", "lineStart": 1, "lineEnd": 4 }]
+        },
+        {
+          "semanticId": "edge-i-j",
+          "from": "node-i",
+          "to": "node-j",
+          "identifier": "step-9",
+          "explanationKo": "연결 9",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        }
+      ]
+    }
+  ]
+}

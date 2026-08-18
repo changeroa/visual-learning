@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "refresh-fixture",
+  "kind": "workflow",
+  "revision": 1,
+  "title": "Refresh Fixture v1",
+  "source": {
+    "root": "/tmp/source",
+    "commit": null
+  },
+  "nodes": [
+    {
+      "semanticId": "service",
+      "label": "Service",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/service.ts",
+          "lineStart": 1
+        }
+      ]
+    },
+    {
+      "semanticId": "queue",
+      "label": "Queue",
+      "status": "inference",
+      "evidence": [
+        {
+          "path": "src/queue.ts",
+          "lineStart": 1
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "semanticId": "service-to-queue",
+      "from": "service",
+      "to": "queue",
+      "label": "publishes",
+      "status": "question",
+      "evidence": [
+        {
+          "path": "src/service.ts",
+          "lineStart": 8
+        }
+      ]
+    }
+  ]
+}

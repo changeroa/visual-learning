@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "renderer-gallery",
+  "kind": "system-architecture",
+  "revision": 1,
+  "title": "Visual Learning Renderer Gallery",
+  "source": { "root": "/tmp/fixture-source", "commit": null },
+  "nodes": [
+    {
+      "semanticId": "browser",
+      "label": "Browser Client",
+      "status": "fact",
+      "evidence": [{ "path": "src/client.ts", "lineStart": 1 }]
+    },
+    {
+      "semanticId": "gateway",
+      "label": "API Gateway",
+      "status": "inference",
+      "evidence": [{ "path": "src/gateway.ts" }]
+    },
+    {
+      "semanticId": "service",
+      "label": "Order Service",
+      "status": "fact",
+      "evidence": [{ "path": "src/order.ts", "symbol": "OrderService" }]
+    },
+    { "semanticId": "queue", "label": "Event Queue", "status": "question", "evidence": [] },
+    {
+      "semanticId": "database",
+      "label": "PostgreSQL",
+      "status": "fact",
+      "evidence": [{ "path": "schema/orders.sql" }]
+    },
+    {
+      "semanticId": "worker",
+      "label": "Fulfillment Worker",
+      "status": "inference",
+      "evidence": [{ "path": "src/worker.ts" }]
+    }
+  ],
+  "edges": [
+    {
+      "semanticId": "browser-to-gateway",
+      "from": "browser",
+      "to": "gateway",
+      "label": "HTTPS",
+      "status": "fact",
+      "evidence": [{ "path": "src/client.ts" }]
+    },
+    {
+      "semanticId": "gateway-to-service",
+      "from": "gateway",
+      "to": "service",
+      "label": "routes",
+      "status": "inference",
+      "evidence": [{ "path": "src/gateway.ts" }]
+    },
+    {
+      "semanticId": "service-to-database",
+      "from": "service",
+      "to": "database",
+      "label": "writes",
+      "status": "fact",
+      "evidence": [{ "path": "src/order.ts" }]
+    },
+    {
+      "semanticId": "service-to-queue",
+      "from": "service",
+      "to": "queue",
+      "label": "publishes",
+      "status": "question",
+      "evidence": []
+    },
+    {
+      "semanticId": "queue-to-worker",
+      "from": "queue",
+      "to": "worker",
+      "label": "delivers",
+      "status": "inference",
+      "evidence": [{ "path": "src/worker.ts" }]
+    }
+  ]
+}

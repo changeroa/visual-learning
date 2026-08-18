@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "atlas-learning-invalid-symbol",
+  "project": "atlas-shop-invalid",
+  "repositoryRoot": "repo",
+  "artifacts": [
+    {
+      "artifactId": "absent-symbol",
+      "kind": "component-architecture",
+      "titleKo": "없는 심볼",
+      "titleEn": "Absent Symbol",
+      "nodes": [
+        {
+          "semanticId": "wrong-symbol",
+          "identifier": "GhostService",
+          "explanationKo": "없는 심볼 참조",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "GhostService" }]
+        },
+        {
+          "semanticId": "router-node",
+          "identifier": "OrdersRouter",
+          "explanationKo": "정상 노드",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "absent-edge",
+          "from": "router-node",
+          "to": "wrong-symbol",
+          "identifier": "calls",
+          "explanationKo": "실패 연결",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,828 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "sample-agent-project-gallery",
+  "project": "sample-agent-project",
+  "repositoryRoot": "repo",
+  "artifacts": [
+    {
+      "artifactId": "project-map-atlas-shop",
+      "kind": "project-map",
+      "titleKo": "Atlas Shop 프로젝트 맵",
+      "titleEn": "Project Map",
+      "nodes": [
+        {
+          "semanticId": "orders-router",
+          "identifier": "OrdersRouter",
+          "explanationKo": "주문 HTTP 진입점",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "checkout-service",
+          "identifier": "CheckoutService",
+          "explanationKo": "주문 처리 핵심 서비스",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "fulfillment-worker",
+          "identifier": "FulfillmentWorker",
+          "explanationKo": "비동기 주문 후속 처리",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "FulfillmentWorker" }
+          ]
+        },
+        {
+          "semanticId": "orders-contract",
+          "identifier": "openapi/orders.yaml",
+          "explanationKo": "주문 API 계약",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "lineStart": 4, "lineEnd": 11 }]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "map-router-service",
+          "from": "orders-router",
+          "to": "checkout-service",
+          "identifier": "createOrder()",
+          "explanationKo": "요청을 서비스로 전달",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "createOrder" }]
+        },
+        {
+          "semanticId": "map-service-worker",
+          "from": "checkout-service",
+          "to": "fulfillment-worker",
+          "identifier": "order-created",
+          "explanationKo": "이벤트 후속 처리로 연결",
+          "status": "inference",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        },
+        {
+          "semanticId": "map-contract-router",
+          "from": "orders-contract",
+          "to": "orders-router",
+          "identifier": "POST /orders",
+          "explanationKo": "계약이 라우터를 정의",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "symbol": "createOrder" }]
+        }
+      ]
+    },
+    {
+      "artifactId": "system-atlas-shop",
+      "kind": "system-architecture",
+      "titleKo": "Atlas Shop 시스템 구조",
+      "titleEn": "System Context",
+      "nodes": [
+        {
+          "semanticId": "browser-client",
+          "identifier": "BrowserClient",
+          "explanationKo": "사용자 브라우저",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "orders-router-sys",
+          "identifier": "OrdersRouter",
+          "explanationKo": "주문 API 경계",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "checkout-service-sys",
+          "identifier": "CheckoutService",
+          "explanationKo": "도메인 서비스",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "queue-system",
+          "identifier": "order-created",
+          "explanationKo": "비동기 이벤트 채널",
+          "status": "inference",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        },
+        {
+          "semanticId": "orders-db-system",
+          "identifier": "orders",
+          "explanationKo": "주문 저장소",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "db/schema.sql", "lineStart": 1, "lineEnd": 4 }]
+        },
+        {
+          "semanticId": "worker-system",
+          "identifier": "FulfillmentWorker",
+          "explanationKo": "후속 처리 워커",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "FulfillmentWorker" }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "sys-browser-router",
+          "from": "browser-client",
+          "to": "orders-router-sys",
+          "identifier": "POST /orders",
+          "explanationKo": "주문 생성 요청",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "sys-router-service",
+          "from": "orders-router-sys",
+          "to": "checkout-service-sys",
+          "identifier": "createOrder()",
+          "explanationKo": "라우터가 서비스 호출",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "createOrder" }]
+        },
+        {
+          "semanticId": "sys-service-db",
+          "from": "checkout-service-sys",
+          "to": "orders-db-system",
+          "identifier": "saveOrder()",
+          "explanationKo": "주문을 저장",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "sys-service-queue",
+          "from": "checkout-service-sys",
+          "to": "queue-system",
+          "identifier": "publishOrderCreated()",
+          "explanationKo": "이벤트를 발행",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [
+            { "path": "src/services/CheckoutService.ts", "symbol": "publishOrderCreated" }
+          ]
+        },
+        {
+          "semanticId": "sys-queue-worker",
+          "from": "queue-system",
+          "to": "worker-system",
+          "identifier": "handleOrderCreated()",
+          "explanationKo": "워커가 이벤트를 처리",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "handleOrderCreated" }
+          ]
+        }
+      ]
+    },
+    {
+      "artifactId": "container-atlas-shop",
+      "kind": "container-architecture",
+      "titleKo": "Atlas Shop 컨테이너 구조",
+      "titleEn": "Container View",
+      "nodes": [
+        {
+          "semanticId": "web-container",
+          "identifier": "WebApp",
+          "explanationKo": "브라우저 화면 컨테이너",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "api-container",
+          "identifier": "OrdersRouter",
+          "explanationKo": "HTTP API 컨테이너",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "service-container",
+          "identifier": "CheckoutService",
+          "explanationKo": "도메인 서비스 컨테이너",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "worker-container",
+          "identifier": "FulfillmentWorker",
+          "explanationKo": "백그라운드 워커 컨테이너",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "FulfillmentWorker" }
+          ]
+        },
+        {
+          "semanticId": "db-container",
+          "identifier": "orders",
+          "explanationKo": "관계형 저장소",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "db/schema.sql", "lineStart": 1, "lineEnd": 4 }]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "container-web-api",
+          "from": "web-container",
+          "to": "api-container",
+          "identifier": "POST /orders",
+          "explanationKo": "웹이 API 호출",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "container-api-service",
+          "from": "api-container",
+          "to": "service-container",
+          "identifier": "submitOrder()",
+          "explanationKo": "API가 서비스 호출",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "submitOrder" }]
+        },
+        {
+          "semanticId": "container-service-db",
+          "from": "service-container",
+          "to": "db-container",
+          "identifier": "saveOrder()",
+          "explanationKo": "서비스가 DB 기록",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "container-service-worker",
+          "from": "service-container",
+          "to": "worker-container",
+          "identifier": "order-created",
+          "explanationKo": "이벤트로 워커 연결",
+          "status": "inference",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        }
+      ]
+    },
+    {
+      "artifactId": "component-atlas-shop",
+      "kind": "component-architecture",
+      "titleKo": "Atlas Shop 컴포넌트 구조",
+      "titleEn": "Component View",
+      "nodes": [
+        {
+          "semanticId": "orders-router-component",
+          "identifier": "OrdersRouter",
+          "explanationKo": "입력 검증과 라우팅",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "checkout-service-component",
+          "identifier": "CheckoutService",
+          "explanationKo": "주문 처리 오케스트레이션",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "payment-gateway-component",
+          "identifier": "PaymentGateway",
+          "explanationKo": "결제 승인 통합",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [{ "path": "src/integrations/PaymentGateway.ts", "symbol": "PaymentGateway" }]
+        },
+        {
+          "semanticId": "repository-component",
+          "identifier": "OrderRepository",
+          "explanationKo": "주문 영속화",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "OrderRepository" }]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "component-router-service",
+          "from": "orders-router-component",
+          "to": "checkout-service-component",
+          "identifier": "submitOrder()",
+          "explanationKo": "라우터가 서비스 위임",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "submitOrder" }]
+        },
+        {
+          "semanticId": "component-service-payment",
+          "from": "checkout-service-component",
+          "to": "payment-gateway-component",
+          "identifier": "authorizePayment()",
+          "explanationKo": "서비스가 결제 승인",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/integrations/PaymentGateway.ts", "symbol": "authorizePayment" }
+          ]
+        },
+        {
+          "semanticId": "component-service-repository",
+          "from": "checkout-service-component",
+          "to": "repository-component",
+          "identifier": "saveOrder()",
+          "explanationKo": "서비스가 저장 위임",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        }
+      ]
+    },
+    {
+      "artifactId": "adr-atlas-shop",
+      "kind": "adr",
+      "titleKo": "Atlas Shop ADR 의사결정",
+      "titleEn": "ADR Tradeoff",
+      "nodes": [
+        {
+          "semanticId": "decision-node",
+          "identifier": "ADR 0001",
+          "explanationKo": "큐 기반 order-created 이벤트 채택",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 1, "lineEnd": 3 }
+          ]
+        },
+        {
+          "semanticId": "benefit-node",
+          "identifier": "decoupling",
+          "explanationKo": "서비스 결합도 감소",
+          "status": "inference",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 3, "lineEnd": 3 }
+          ]
+        },
+        {
+          "semanticId": "cost-node",
+          "identifier": "operational moving parts",
+          "explanationKo": "운영 복잡도 증가",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 3, "lineEnd": 3 }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "adr-benefit",
+          "from": "decision-node",
+          "to": "benefit-node",
+          "identifier": "supports",
+          "explanationKo": "선택 이유",
+          "status": "inference",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        },
+        {
+          "semanticId": "adr-cost",
+          "from": "decision-node",
+          "to": "cost-node",
+          "identifier": "tradeoff",
+          "explanationKo": "부작용",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 3, "lineEnd": 3 }
+          ]
+        }
+      ]
+    },
+    {
+      "artifactId": "api-contract-atlas-shop",
+      "kind": "api-contract",
+      "titleKo": "Atlas Shop API 계약",
+      "titleEn": "API Contract",
+      "nodes": [
+        {
+          "semanticId": "endpoint-node",
+          "identifier": "POST /orders",
+          "explanationKo": "주문 생성 엔드포인트",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "lineStart": 4, "lineEnd": 11 }]
+        },
+        {
+          "semanticId": "operation-node",
+          "identifier": "createOrder",
+          "explanationKo": "연산 식별자",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "symbol": "createOrder" }]
+        },
+        {
+          "semanticId": "response-node",
+          "identifier": "201",
+          "explanationKo": "생성 성공 응답",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "lineStart": 10, "lineEnd": 11 }]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "api-endpoint-operation",
+          "from": "endpoint-node",
+          "to": "operation-node",
+          "identifier": "operationId",
+          "explanationKo": "엔드포인트와 핸들러 연결",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "symbol": "operationId" }]
+        },
+        {
+          "semanticId": "api-operation-response",
+          "from": "operation-node",
+          "to": "response-node",
+          "identifier": "201 Created",
+          "explanationKo": "정상 응답 경로",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "lineStart": 10, "lineEnd": 11 }]
+        }
+      ]
+    },
+    {
+      "artifactId": "checkout-sequence-atlas-shop",
+      "kind": "workflow",
+      "titleKo": "Atlas Shop 주문 시퀀스",
+      "titleEn": "Workflow Sequence",
+      "nodes": [
+        {
+          "semanticId": "seq-browser",
+          "identifier": "BrowserClient",
+          "explanationKo": "주문 제출 시작",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "seq-router",
+          "identifier": "OrdersRouter",
+          "explanationKo": "요청 수신",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "seq-service",
+          "identifier": "CheckoutService",
+          "explanationKo": "도메인 처리",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "seq-db",
+          "identifier": "OrderRepository",
+          "explanationKo": "주문 저장",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "OrderRepository" }]
+        },
+        {
+          "semanticId": "seq-worker",
+          "identifier": "FulfillmentWorker",
+          "explanationKo": "후속 처리",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "FulfillmentWorker" }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "seq-browser-router",
+          "from": "seq-browser",
+          "to": "seq-router",
+          "identifier": "POST /orders",
+          "explanationKo": "요청 전송",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "seq-router-service",
+          "from": "seq-router",
+          "to": "seq-service",
+          "identifier": "submitOrder()",
+          "explanationKo": "서비스 호출",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "submitOrder" }]
+        },
+        {
+          "semanticId": "seq-service-db",
+          "from": "seq-service",
+          "to": "seq-db",
+          "identifier": "saveOrder()",
+          "explanationKo": "영속화",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "seq-service-worker",
+          "from": "seq-service",
+          "to": "seq-worker",
+          "identifier": "publishOrderCreated()",
+          "explanationKo": "이벤트 후속 처리 트리거",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/services/CheckoutService.ts", "symbol": "publishOrderCreated" }
+          ]
+        }
+      ]
+    },
+    {
+      "artifactId": "data-flow-atlas-shop",
+      "kind": "data-flow",
+      "titleKo": "Atlas Shop 데이터 흐름",
+      "titleEn": "Data Flow",
+      "nodes": [
+        {
+          "semanticId": "request-payload",
+          "identifier": "OrderRequest",
+          "explanationKo": "입력 페이로드",
+          "status": "inference",
+          "confidence": "low",
+          "evidence": [{ "path": "openapi/orders.yaml", "lineStart": 6, "lineEnd": 9 }]
+        },
+        {
+          "semanticId": "order-record",
+          "identifier": "orders",
+          "explanationKo": "저장된 주문 레코드",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "db/schema.sql", "lineStart": 1, "lineEnd": 4 }]
+        },
+        {
+          "semanticId": "domain-event",
+          "identifier": "order-created",
+          "explanationKo": "도메인 이벤트",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "docs/adr/0001-queue-order-events.md", "lineStart": 2, "lineEnd": 3 }
+          ]
+        },
+        {
+          "semanticId": "fulfillment-state",
+          "identifier": "fulfilled",
+          "explanationKo": "후속 처리 결과 상태",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "data-request-record",
+          "from": "request-payload",
+          "to": "order-record",
+          "identifier": "saveOrder()",
+          "explanationKo": "요청이 레코드로 저장",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "data-record-event",
+          "from": "order-record",
+          "to": "domain-event",
+          "identifier": "publishOrderCreated()",
+          "explanationKo": "저장 후 이벤트 발행",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/services/CheckoutService.ts", "symbol": "publishOrderCreated" }
+          ]
+        },
+        {
+          "semanticId": "data-event-state",
+          "from": "domain-event",
+          "to": "fulfillment-state",
+          "identifier": "handleOrderCreated()",
+          "explanationKo": "이벤트가 처리 상태로 이어짐",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "handleOrderCreated" }
+          ]
+        }
+      ]
+    },
+    {
+      "artifactId": "trust-boundary-atlas-shop",
+      "kind": "trust-boundary",
+      "titleKo": "Atlas Shop 신뢰 경계",
+      "titleEn": "Trust Boundary",
+      "nodes": [
+        {
+          "semanticId": "external-browser",
+          "identifier": "BrowserClient",
+          "explanationKo": "외부 사용자 영역",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "public-api",
+          "identifier": "OrdersRouter",
+          "explanationKo": "공개 API 경계",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "private-service",
+          "identifier": "CheckoutService",
+          "explanationKo": "내부 서비스 경계",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "payment-vendor",
+          "identifier": "PaymentGateway",
+          "explanationKo": "외부 결제 공급자",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [{ "path": "src/integrations/PaymentGateway.ts", "symbol": "PaymentGateway" }]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "trust-browser-api",
+          "from": "external-browser",
+          "to": "public-api",
+          "identifier": "HTTPS",
+          "explanationKo": "인터넷 경계 통과",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        },
+        {
+          "semanticId": "trust-api-service",
+          "from": "public-api",
+          "to": "private-service",
+          "identifier": "submitOrder()",
+          "explanationKo": "내부 경계 진입",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "submitOrder" }]
+        },
+        {
+          "semanticId": "trust-service-vendor",
+          "from": "private-service",
+          "to": "payment-vendor",
+          "identifier": "authorizePayment()",
+          "explanationKo": "외부 공급자 호출",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/integrations/PaymentGateway.ts", "symbol": "authorizePayment" }
+          ]
+        }
+      ]
+    },
+    {
+      "artifactId": "code-exploration-atlas-shop",
+      "kind": "code-exploration",
+      "titleKo": "Atlas Shop 코드 탐색",
+      "titleEn": "Call Map",
+      "nodes": [
+        {
+          "semanticId": "code-router",
+          "identifier": "OrdersRouter",
+          "explanationKo": "요청 시작점",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "OrdersRouter" }]
+        },
+        {
+          "semanticId": "code-service",
+          "identifier": "CheckoutService",
+          "explanationKo": "호출 중심 서비스",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/services/CheckoutService.ts", "symbol": "CheckoutService" }]
+        },
+        {
+          "semanticId": "code-payment",
+          "identifier": "PaymentGateway",
+          "explanationKo": "결제 통합 포인트",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [{ "path": "src/integrations/PaymentGateway.ts", "symbol": "PaymentGateway" }]
+        },
+        {
+          "semanticId": "code-repository",
+          "identifier": "OrderRepository",
+          "explanationKo": "저장 호출 종착점",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "OrderRepository" }]
+        },
+        {
+          "semanticId": "code-worker",
+          "identifier": "FulfillmentWorker",
+          "explanationKo": "비동기 후속 흐름",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/workers/FulfillmentWorker.ts", "symbol": "FulfillmentWorker" }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "code-router-service",
+          "from": "code-router",
+          "to": "code-service",
+          "identifier": "createOrder()",
+          "explanationKo": "라우터가 서비스 호출",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/routes/orders.ts", "symbol": "createOrder" }]
+        },
+        {
+          "semanticId": "code-service-payment",
+          "from": "code-service",
+          "to": "code-payment",
+          "identifier": "authorizePayment()",
+          "explanationKo": "결제 승인 호출",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/integrations/PaymentGateway.ts", "symbol": "authorizePayment" }
+          ]
+        },
+        {
+          "semanticId": "code-service-repository",
+          "from": "code-service",
+          "to": "code-repository",
+          "identifier": "saveOrder()",
+          "explanationKo": "영속화 호출",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "src/domain/OrderRepository.ts", "symbol": "saveOrder" }]
+        },
+        {
+          "semanticId": "code-service-worker",
+          "from": "code-service",
+          "to": "code-worker",
+          "identifier": "publishOrderCreated()",
+          "explanationKo": "후속 작업 트리거",
+          "status": "fact",
+          "confidence": "medium",
+          "evidence": [
+            { "path": "src/services/CheckoutService.ts", "symbol": "publishOrderCreated" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+node_modules/
+.omo/
+.senpi/
+.visual-learning-owner.json
+tests/tmp/
+*.log
+.DS_Store

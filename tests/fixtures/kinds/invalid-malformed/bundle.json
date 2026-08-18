@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "bundleId": "atlas-learning-invalid-lines",
+  "project": "atlas-shop-invalid",
+  "repositoryRoot": "repo",
+  "artifacts": [
+    {
+      "artifactId": "malformed-lines",
+      "kind": "api-contract",
+      "titleKo": "잘못된 계약 라인",
+      "titleEn": "Malformed Contract Line",
+      "nodes": [
+        {
+          "semanticId": "bad-line",
+          "identifier": "POST /orders",
+          "explanationKo": "범위를 벗어난 라인",
+          "status": "fact",
+          "confidence": "high",
+          "evidence": [{ "path": "openapi/orders.yaml", "lineStart": 99, "lineEnd": 100 }]
+        },
+        {
+          "semanticId": "ok-line",
+          "identifier": "createOrder",
+          "explanationKo": "정상 노드",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ],
+      "edges": [
+        {
+          "semanticId": "malformed-edge",
+          "from": "bad-line",
+          "to": "ok-line",
+          "identifier": "binds",
+          "explanationKo": "실패 연결",
+          "status": "question",
+          "confidence": "unknown",
+          "evidence": []
+        }
+      ]
+    }
+  ]
+}
