@@ -39,6 +39,16 @@ export type PhaseFeasibility = {
   readonly estimatedZoom: number;
   readonly columns: number;
   readonly maxNodesPerColumn: number;
+  readonly effectiveTypography: {
+    readonly zoom: number;
+    readonly nodeTitlePx: number;
+    readonly nodeBodyPx: number;
+    readonly edgeLabelPx: number;
+    readonly uiMetadataPx: number;
+    readonly detailTextPx: number;
+    readonly minimumRequiredPx: number;
+    readonly requiredCanvasZoom: number;
+  };
   readonly corridors: readonly CorridorFeasibility[];
 };
 
@@ -60,16 +70,45 @@ export type CompiledInteractiveScene = {
 };
 
 export type CompiledInteractiveDocument = {
-  readonly contractVersion: 1;
+  readonly contractVersion: 2;
   readonly direction: "left-to-right";
   readonly source: InteractiveAuthoringDocument["source"];
+  readonly interaction: InteractiveAuthoringDocument["interaction"];
   readonly scenes: readonly CompiledInteractiveScene[];
+  readonly warnings: readonly string[];
   readonly measurementPolicy: {
     readonly mode: "dom-final-correction";
     readonly nodeAspectRatio: 1.5;
     readonly sizing: "measure-content-then-clamp";
     readonly edgeLabels: "route-after-node-measurement";
+    readonly typography: "enforce-authored-and-effective-text-floors";
+    readonly effectiveTextFormula: "nominal-css-px-times-transform-scale-times-font-scale";
+    readonly remeasureOn: readonly [
+      "fonts-ready",
+      "phase-change",
+      "detail-level-change",
+      "font-scale-change",
+      "container-resize",
+    ];
     readonly exactPixelsGuaranteed: false;
+  };
+  readonly interactionPolicy: {
+    readonly detailLevels: readonly ["beginner", "intermediate", "expert"];
+    readonly canonicalSourceAvailable: true;
+    readonly fontScalePercent: { readonly minimum: 100; readonly maximum: 150 };
+    readonly preserveAcrossControls: readonly [
+      "node-and-edge-ids-and-order",
+      "topology",
+      "phase-state",
+      "canonical-source",
+      "identifiers",
+      "evidence-ids",
+    ];
+    readonly accessibility: {
+      readonly detailLevel: "radiogroup-with-arrow-key-navigation";
+      readonly canonicalSource: "disclosure-with-aria-expanded";
+      readonly fontScale: "range-with-live-output";
+    };
   };
 };
 
@@ -84,9 +123,20 @@ function graphemes(value: string): string[] {
 
 function estimateNodeWidth(scene: InteractiveAuthoringScene, entity: EntityBaseline): number {
   const { minWidth, maxWidth, widthStep } = scene.constraints.nodeSizing;
-  const titleDemand = graphemes(entity.title).length;
-  const descriptionDemand = Math.ceil(graphemes(entity.description).length / 2);
-  const demand = Math.max(titleDemand, descriptionDemand);
+  const maxFontScale = 1.5;
+  const titleDemand =
+    graphemes(entity.title).length *
+    (scene.constraints.typography.nodeTitleMinPx / 24) *
+    maxFontScale;
+  const descriptionDemand =
+    Math.ceil(graphemes(entity.description).length / 2) *
+    (scene.constraints.typography.nodeBodyMinPx / 20) *
+    maxFontScale;
+  const badgeDemand =
+    graphemes(entity.badge ?? "").length *
+    (scene.constraints.typography.nodeBodyMinPx / 20) *
+    maxFontScale;
+  const demand = Math.max(titleDemand, descriptionDemand, badgeDemand);
   const steps = Math.max(0, Math.ceil((demand - 24) / 18));
   return Math.min(maxWidth, Math.max(minWidth, minWidth + steps * widthStep));
 }
@@ -129,11 +179,12 @@ function compileNode(
     id,
     title: entity.title,
     description: entity.description,
+    details: structuredClone(entity.details),
     changeStatus: entity.changeStatus,
     visual: entity.visual,
     status: entity.status,
     confidence: entity.confidence,
-    evidence: entity.evidence,
+    evidence: structuredClone(entity.evidence),
     estimatedWidth,
     estimatedHeight: estimatedWidth / scene.constraints.nodeSizing.aspectRatio,
   };
@@ -142,13 +193,26 @@ function compileNode(
   return result;
 }
 
-function estimateLabelWidth(label: string): number {
+function estimateLabelWidth(label: string, fontSizePx: number): number {
   const width = graphemes(label).reduce(
     (total, value) =>
-      total + (/^[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af]$/u.test(value) ? 13 : 7.2),
+      total +
+      (/^[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af]$/u.test(value) ? fontSizePx : fontSizePx * 0.56),
     0,
   );
   return Math.ceil(width + 16);
+}
+
+function estimateLabelHeight(label: string, fontSizePx: number, maxLineWidth: number): number {
+  const contentWidth = Math.max(1, maxLineWidth - 16);
+  const visualLines = label
+    .split(/\r\n|\r|\n/u)
+    .reduce(
+      (total, line) =>
+        total + Math.max(1, Math.ceil((estimateLabelWidth(line, fontSizePx) - 16) / contentWidth)),
+      0,
+    );
+  return Math.ceil(visualLines * fontSizePx * 1.2 + 16);
 }
 
 function fallbackResolves(
@@ -167,7 +231,7 @@ function fallbackResolves(
 function phaseGeometry(
   scene: InteractiveAuthoringScene,
   nodes: readonly CompiledInteractiveNode[],
-): Omit<PhaseFeasibility, "corridors"> {
+): Omit<PhaseFeasibility, "corridors" | "effectiveTypography"> {
   const placements = scene.presentation.placements;
   const activePlacements = nodes.map((node) => ({ node, placement: placements[node.id] }));
   const columns =
@@ -225,6 +289,27 @@ function phaseGeometry(
   };
 }
 
+function effectiveTypography(
+  scene: InteractiveAuthoringScene,
+  zoom: number,
+): PhaseFeasibility["effectiveTypography"] {
+  const typography = scene.constraints.typography;
+  return {
+    zoom,
+    nodeTitlePx: typography.nodeTitleMinPx * zoom,
+    nodeBodyPx: typography.nodeBodyMinPx * zoom,
+    edgeLabelPx: typography.edgeLabelMinPx * zoom,
+    uiMetadataPx: typography.uiMetadataMinPx,
+    detailTextPx: typography.detailTextMinPx,
+    minimumRequiredPx: typography.minimumEffectiveTextPx,
+    requiredCanvasZoom: Math.max(
+      typography.minimumEffectiveTextPx / typography.nodeTitleMinPx,
+      typography.minimumEffectiveTextPx / typography.nodeBodyMinPx,
+      typography.minimumEffectiveTextPx / typography.edgeLabelMinPx,
+    ),
+  };
+}
+
 function compilePhase(
   scene: InteractiveAuthoringScene,
   phase: InteractivePhaseName,
@@ -252,9 +337,12 @@ function compilePhase(
       : sourcePlacement.lane === targetPlacement.lane
         ? scene.constraints.layout.rowGap
         : scene.constraints.layout.laneGap;
+    const labelFontSize = scene.constraints.typography.edgeLabelMinPx * 1.5;
     const required = Math.max(
       scene.constraints.layout.minimumCorridor,
-      horizontal ? estimateLabelWidth(relation.label) : 25,
+      horizontal
+        ? estimateLabelWidth(relation.label, labelFontSize)
+        : estimateLabelHeight(relation.label, labelFontSize, scene.constraints.nodeSizing.minWidth),
     );
     const directFits = available >= required;
     const override = scene.presentation.edgeRouting.relations?.[id];
@@ -306,7 +394,11 @@ function compilePhase(
     label: authored.label,
     nodes,
     edges,
-    feasibility: { ...geometry, corridors },
+    feasibility: {
+      ...geometry,
+      effectiveTypography: effectiveTypography(scene, geometry.estimatedZoom),
+      corridors,
+    },
   };
 }
 
@@ -332,17 +424,57 @@ export function compileInteractiveAuthoringDocument(raw: unknown): CompiledInter
   if (failures.length > 0) {
     throw new InputError(`interactive authoring feasibility failed:\n- ${failures.join("\n- ")}`);
   }
+  const warnings = document.scenes.flatMap((scene) =>
+    Object.entries(scene.semantics.entities).flatMap(([entityId, entity]) =>
+      (["role", "before", "after", "reason", "impact"] as const).flatMap((dimension) =>
+        entity.details[dimension].identifiers.length === 0
+          ? [
+              `${scene.semanticId}/${entityId}/details/${dimension}: empty identifiers is an author assertion that no exact identifier applies`,
+            ]
+          : [],
+      ),
+    ),
+  );
   return {
-    contractVersion: 1,
+    contractVersion: 2,
     direction: "left-to-right",
     source: document.source,
+    interaction: structuredClone(document.interaction),
     scenes,
+    warnings,
     measurementPolicy: {
       mode: "dom-final-correction",
       nodeAspectRatio: 1.5,
       sizing: "measure-content-then-clamp",
       edgeLabels: "route-after-node-measurement",
+      typography: "enforce-authored-and-effective-text-floors",
+      effectiveTextFormula: "nominal-css-px-times-transform-scale-times-font-scale",
+      remeasureOn: [
+        "fonts-ready",
+        "phase-change",
+        "detail-level-change",
+        "font-scale-change",
+        "container-resize",
+      ],
       exactPixelsGuaranteed: false,
+    },
+    interactionPolicy: {
+      detailLevels: ["beginner", "intermediate", "expert"],
+      canonicalSourceAvailable: true,
+      fontScalePercent: { minimum: 100, maximum: 150 },
+      preserveAcrossControls: [
+        "node-and-edge-ids-and-order",
+        "topology",
+        "phase-state",
+        "canonical-source",
+        "identifiers",
+        "evidence-ids",
+      ],
+      accessibility: {
+        detailLevel: "radiogroup-with-arrow-key-navigation",
+        canonicalSource: "disclosure-with-aria-expanded",
+        fontScale: "range-with-live-output",
+      },
     },
   };
 }

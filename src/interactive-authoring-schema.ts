@@ -35,17 +35,46 @@ const sourceRootSchema = z
     (value) => isAbsolute(value) && normalize(value) === value,
     "source root must be a normalized absolute path",
   );
+const identifiedEvidenceReferenceSchema = evidenceReferenceSchema.safeExtend({
+  id: identifierSchema,
+});
 
 const claimFields = {
   status: knowledgeStatusSchema,
   confidence: confidenceSchema,
-  evidence: z.array(evidenceReferenceSchema),
+  evidence: z.array(identifiedEvidenceReferenceSchema),
 } as const;
+
+const detailDimensionSchema = z
+  .object({
+    source: z.string().trim().min(1),
+    identifiers: z.array(z.string().trim().min(1)),
+    projections: z
+      .object({
+        beginner: z.string().trim().min(1),
+        intermediate: z.string().trim().min(1),
+        expert: z.string().trim().min(1),
+      })
+      .strict(),
+  })
+  .strict();
+
+const entityDetailsSchema = z
+  .object({
+    role: detailDimensionSchema,
+    before: detailDimensionSchema,
+    after: detailDimensionSchema,
+    reason: detailDimensionSchema,
+    impact: detailDimensionSchema,
+    evidenceIds: z.array(identifierSchema).min(1),
+  })
+  .strict();
 
 const entityBaselineSchema = z
   .object({
     title: z.string().trim().min(1),
     description: z.string().trim().min(1),
+    details: entityDetailsSchema,
     badge: z.string().trim().min(1).nullable().optional(),
     changeStatus: changeStatusSchema,
     visual: z
@@ -77,7 +106,7 @@ const entityPatchSchema = z
     changeStatus: changeStatusSchema.optional(),
     status: knowledgeStatusSchema.optional(),
     confidence: confidenceSchema.optional(),
-    evidence: z.array(evidenceReferenceSchema).optional(),
+    evidence: z.array(identifiedEvidenceReferenceSchema).optional(),
     present: z.literal(false).optional(),
   })
   .strict()
@@ -92,7 +121,7 @@ const relationPatchSchema = z
     animated: z.boolean().optional(),
     status: knowledgeStatusSchema.optional(),
     confidence: confidenceSchema.optional(),
-    evidence: z.array(evidenceReferenceSchema).optional(),
+    evidence: z.array(identifiedEvidenceReferenceSchema).optional(),
     present: z.literal(false).optional(),
   })
   .strict()
@@ -115,13 +144,50 @@ const copyConstraintsSchema = z
     storyTakeawayMaxGraphemes: z.number().int().positive(),
     titleMaxGraphemes: z.number().int().positive(),
     descriptionMaxGraphemes: z.number().int().positive(),
+    badgeMaxGraphemes: z.number().int().positive(),
     edgeLabelMaxGraphemes: z.number().int().positive(),
+    detailSourceMaxGraphemes: z.number().int().positive(),
+    detailBeginnerMaxGraphemes: z.number().int().positive(),
+    detailIntermediateMaxGraphemes: z.number().int().positive(),
+    detailExpertMaxGraphemes: z.number().int().positive(),
     storyQuestionMaxLines: z.number().int().positive(),
     storySummaryMaxLines: z.number().int().positive(),
     storyTakeawayMaxLines: z.number().int().positive(),
     titleMaxLines: z.number().int().positive(),
     descriptionMaxLines: z.number().int().positive(),
+    badgeMaxLines: z.number().int().positive(),
     edgeLabelMaxLines: z.number().int().positive(),
+    detailSourceMaxLines: z.number().int().positive(),
+    detailBeginnerMaxLines: z.number().int().positive(),
+    detailIntermediateMaxLines: z.number().int().positive(),
+    detailExpertMaxLines: z.number().int().positive(),
+  })
+  .strict();
+
+const interactionSchema = z
+  .object({
+    detailLevel: z
+      .object({
+        options: z.tuple([z.literal("beginner"), z.literal("intermediate"), z.literal("expert")]),
+        default: z.enum(["beginner", "intermediate", "expert"]),
+        accessibleLabel: z.string().trim().min(1),
+      })
+      .strict(),
+    canonicalSource: z
+      .object({
+        available: z.literal(true),
+        accessibleLabel: z.string().trim().min(1),
+      })
+      .strict(),
+    fontScale: z
+      .object({
+        minimumPercent: z.literal(100),
+        maximumPercent: z.literal(150),
+        defaultPercent: z.literal(100),
+        stepPercent: z.literal(5),
+        accessibleLabel: z.string().trim().min(1),
+      })
+      .strict(),
   })
   .strict();
 
@@ -220,6 +286,16 @@ const interactiveSceneBaseSchema = z
           })
           .strict(),
         copy: copyConstraintsSchema,
+        typography: z
+          .object({
+            nodeTitleMinPx: z.number().min(24),
+            nodeBodyMinPx: z.number().min(20),
+            edgeLabelMinPx: z.number().min(20),
+            uiMetadataMinPx: z.number().min(20),
+            detailTextMinPx: z.number().min(20),
+            minimumEffectiveTextPx: z.number().min(14),
+          })
+          .strict(),
       })
       .strict(),
   })
@@ -231,8 +307,9 @@ const interactiveSceneSchema = interactiveSceneBaseSchema.superRefine(refineInte
 
 export const interactiveAuthoringDocumentSchema = z
   .object({
-    contractVersion: z.literal(1),
+    contractVersion: z.literal(2),
     direction: z.literal("left-to-right"),
+    interaction: interactionSchema,
     source: z
       .object({
         root: sourceRootSchema,
