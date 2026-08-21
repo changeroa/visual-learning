@@ -31,6 +31,8 @@ describe("visual-note CLI", () => {
       "extend",
       "refresh",
       "validate",
+      "authoring-schema",
+      "compile-authoring",
       "open",
       "restore",
       "contract",
@@ -69,6 +71,24 @@ describe("visual-note CLI", () => {
     // Then
     expect(accepted.code).toBe(0);
     expect(rejected.code).toBe(2);
+  });
+
+  test("emits and compiles the render-independent interactive authoring contract", () => {
+    const fixture = join(import.meta.dir, "fixtures/interactive-authoring.json");
+    const schema = run(["authoring-schema", "--json"]);
+    const compiled = run(["compile-authoring", "--spec", fixture, "--json"]);
+    expect(schema.code).toBe(0);
+    expect(JSON.parse(schema.stdout)).toEqual(expect.objectContaining({ type: "object" }));
+    expect(compiled.code).toBe(0);
+    expect(JSON.parse(compiled.stdout)).toEqual(
+      expect.objectContaining({
+        contractVersion: 1,
+        measurementPolicy: expect.objectContaining({
+          nodeAspectRatio: 1.5,
+          exactPixelsGuaranteed: false,
+        }),
+      }),
+    );
   });
 
   test("create rejects invalid input before writing and refuses a dirty target", () => {

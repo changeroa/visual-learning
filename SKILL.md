@@ -1,6 +1,6 @@
 ---
 name: visual-learning
-description: Create, export, refresh, validate, open, or restore evidence-backed engineering maps as linked Markdown, polished SVG, and Excalidraw notes. Use for whole-repository architecture series, project maps, C4 views, ADR tradeoffs, API journeys, workflows, sequences, data flows, trust boundaries, code exploration, call maps, or Korean visual study notes that preserve exact English identifiers and human annotations.
+description: Create, export, refresh, validate, open, or restore evidence-backed engineering maps as linked Markdown, polished SVG, Excalidraw notes, or renderer-independent JSON for local interactive web views. Use for whole-repository architecture series, project maps, commit before/after animations, React Flow maps, C4 views, ADR tradeoffs, API journeys, workflows, sequences, data flows, trust boundaries, code exploration, call maps, or Korean visual study notes that preserve exact English identifiers and human annotations.
 ---
 
 # Visual Learning
@@ -54,6 +54,28 @@ When the user asks to visualize an entire repository, prefer a linked series ins
 5. Two `component-architecture` views, normally one per major runtime.
 
 Use `presentation.frames` plus node-level `visual.category`, `visual.frameId`, `visual.shape`, `visual.emphasis`, `visual.lane`, and `visual.order`. Reuse the same category palette and reading direction across every view in the series.
+
+## Interactive web authoring mode
+
+When the user requests a local interactive web page, React Flow, animated commit comparison, or a
+JSON contract that can be authored before rendering, read
+[references/render-independent-authoring-contract.md](references/render-independent-authoring-contract.md).
+Keep this mode optional; the default Markdown/SVG/Excalidraw workflow remains authoritative for
+ordinary visual notes.
+
+Author meaning as stable baseline entities and relations plus ordered `before`/`after` patches. Add
+lanes, columns, copy budgets, 3:2 node-sizing constraints, and edge-label fallback policy, but never
+guess `x`/`y` coordinates. Emit the machine-readable schema and compile before opening a browser:
+
+```sh
+"$SKILL/bin/visual-note" authoring-schema --json
+"$SKILL/bin/visual-note" compile-authoring --spec /absolute/path/authoring.json --json
+```
+
+Only the compiled result may cross into the renderer. Treat its size and corridor calculations as
+preflight estimates. A React Flow adapter must measure real DOM content, preserve width:height at
+3:2, update node internals, route labels after nodes stabilize, and run rectangle-level browser QA.
+Never claim pixel correctness from render-free validation alone.
 
 ## Workflow
 

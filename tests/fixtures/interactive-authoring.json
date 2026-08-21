@@ -1,0 +1,224 @@
+{
+  "contractVersion": 1,
+  "direction": "left-to-right",
+  "source": {
+    "root": "/tmp/visual-learning-source",
+    "before": { "commit": "6d00d4a", "label": "commit absent" },
+    "after": { "commit": "1c37b5d", "label": "commit present" }
+  },
+  "scenes": [
+    {
+      "semanticId": "generation-authority-change",
+      "kind": "trust-boundary",
+      "story": {
+        "question": "커밋이 있을 때 generation transition 권한은 어떻게 달라지는가?",
+        "summary": "브라우저가 직접 transition하던 경계가 internal daemon authority로 이동한다.",
+        "takeaway": "사용자는 admission과 cancel을, daemon은 실행 transition을 소유한다.",
+        "readingOrder": ["commit-source", "browser-executor", "daemon-authority", "test-proof"]
+      },
+      "semantics": {
+        "entities": {
+          "commit-source": {
+            "title": "Source revision",
+            "description": "선택한 commit이 비교할 runtime surface를 결정한다.",
+            "badge": "GIT",
+            "changeStatus": "normal",
+            "visual": { "category": "neutral", "shape": "rectangle" },
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/src/router.ts", "symbol": "router" }]
+          },
+          "browser-executor": {
+            "title": "Browser transitions",
+            "description": "claim, complete, resume 요청을 보내던 public executor surface다.",
+            "changeStatus": "removed",
+            "visual": { "category": "runtime", "shape": "rectangle" },
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/src/modules/generation/api.ts" }]
+          },
+          "daemon-authority": {
+            "title": "Internal daemon authority",
+            "description": "bearer-protected internal endpoint가 transition을 소유한다.",
+            "badge": "TOKEN",
+            "changeStatus": "added",
+            "visual": { "category": "security", "shape": "diamond" },
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/src/modules/generation/daemon-api.ts" }]
+          },
+          "test-proof": {
+            "title": "Boundary regression",
+            "description": "public transition은 404이고 daemon path만 남는 사실을 고정한다.",
+            "changeStatus": "changed",
+            "visual": { "category": "data", "shape": "rectangle" },
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/test/content-lifecycle.test.ts" }]
+          }
+        },
+        "relations": {
+          "source-browser": {
+            "from": "commit-source",
+            "to": "browser-executor",
+            "label": "public transition surface",
+            "changeStatus": "removed",
+            "animated": false,
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/src/router.ts" }]
+          },
+          "source-daemon": {
+            "from": "commit-source",
+            "to": "daemon-authority",
+            "label": "internal authority surface",
+            "changeStatus": "added",
+            "animated": true,
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/src/router.ts" }]
+          },
+          "daemon-browser": {
+            "from": "daemon-authority",
+            "to": "browser-executor",
+            "label": "owns execution transition",
+            "changeStatus": "added",
+            "animated": true,
+            "status": "inference",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/src/modules/generation/daemon-api.ts" }]
+          },
+          "executor-tests": {
+            "from": "browser-executor",
+            "to": "test-proof",
+            "label": "pinned by regression",
+            "changeStatus": "changed",
+            "animated": false,
+            "status": "fact",
+            "confidence": "high",
+            "evidence": [{ "path": "worker/test/content-lifecycle.test.ts" }]
+          }
+        }
+      },
+      "change": {
+        "before": {
+          "label": "commit absent",
+          "entities": {
+            "commit-source": { "changeStatus": "unchanged" },
+            "browser-executor": { "changeStatus": "normal" },
+            "daemon-authority": { "present": false },
+            "test-proof": { "changeStatus": "gap" }
+          },
+          "relations": {
+            "source-browser": { "changeStatus": "normal" },
+            "source-daemon": { "present": false },
+            "daemon-browser": { "present": false },
+            "executor-tests": { "changeStatus": "gap" }
+          },
+          "entityOrder": ["commit-source", "browser-executor", "test-proof"],
+          "relationOrder": ["source-browser", "executor-tests"]
+        },
+        "after": {
+          "label": "commit present",
+          "entities": {
+            "commit-source": { "changeStatus": "unchanged" },
+            "browser-executor": {
+              "title": "Browser admission only",
+              "description": "사용자는 create와 cancel만 수행하고 transition endpoint는 받지 않는다.",
+              "badge": null,
+              "changeStatus": "changed"
+            },
+            "daemon-authority": { "changeStatus": "added" },
+            "test-proof": { "changeStatus": "changed" }
+          },
+          "relations": {
+            "source-browser": { "present": false },
+            "source-daemon": { "changeStatus": "added" },
+            "daemon-browser": { "changeStatus": "added" },
+            "executor-tests": {
+              "label": "404 boundary pinned",
+              "changeStatus": "changed"
+            }
+          },
+          "entityOrder": ["commit-source", "daemon-authority", "browser-executor", "test-proof"],
+          "relationOrder": ["source-daemon", "daemon-browser", "executor-tests"]
+        }
+      },
+      "presentation": {
+        "layout": "lanes",
+        "readingGuide": "왼쪽 commit에서 시작해 authority와 verification으로 읽는다.",
+        "outcome": "commit 유무에 따른 실행 권한 이동을 설명한다.",
+        "lanes": [
+          { "id": "source", "label": "Source", "purpose": "비교 기준" },
+          { "id": "security", "label": "Authority", "purpose": "실행 권한" },
+          { "id": "runtime", "label": "Runtime", "purpose": "사용자와 daemon 동작" },
+          { "id": "proof", "label": "Verification", "purpose": "회귀 증거" }
+        ],
+        "placements": {
+          "commit-source": {
+            "column": 0,
+            "lane": "source",
+            "order": 0,
+            "role": "comparison source",
+            "emphasis": "primary"
+          },
+          "daemon-authority": {
+            "column": 1,
+            "lane": "security",
+            "order": 0,
+            "role": "transition authority",
+            "emphasis": "primary"
+          },
+          "browser-executor": {
+            "column": 2,
+            "lane": "runtime",
+            "order": 0,
+            "role": "public runtime",
+            "emphasis": "secondary"
+          },
+          "test-proof": {
+            "column": 3,
+            "lane": "proof",
+            "order": 0,
+            "role": "verification",
+            "emphasis": "secondary"
+          }
+        },
+        "edgeRouting": {
+          "defaultLabelPlacement": "auto-corridor",
+          "fallback": ["source-side", "target-side", "detached-callout"],
+          "relations": {
+            "source-daemon": { "fallback": ["top-corridor", "detached-callout"] }
+          }
+        }
+      },
+      "constraints": {
+        "viewport": { "width": 1440, "height": 900 },
+        "nodeSizing": { "aspectRatio": 1.5, "minWidth": 270, "maxWidth": 420, "widthStep": 30 },
+        "layout": {
+          "maxColumns": 4,
+          "maxNodesPerColumn": 2,
+          "minimumZoom": 0.72,
+          "columnGap": 160,
+          "rowGap": 72,
+          "laneGap": 96,
+          "minimumCorridor": 48
+        },
+        "copy": {
+          "storyQuestionMaxGraphemes": 80,
+          "storySummaryMaxGraphemes": 90,
+          "storyTakeawayMaxGraphemes": 90,
+          "titleMaxGraphemes": 48,
+          "descriptionMaxGraphemes": 100,
+          "edgeLabelMaxGraphemes": 36,
+          "storyQuestionMaxLines": 2,
+          "storySummaryMaxLines": 2,
+          "storyTakeawayMaxLines": 2,
+          "titleMaxLines": 2,
+          "descriptionMaxLines": 3,
+          "edgeLabelMaxLines": 2
+        }
+      }
+    }
+  ]
+}
