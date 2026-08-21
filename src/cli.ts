@@ -5,6 +5,8 @@ import { z } from "zod";
 import { optional, parseOptions, required } from "./arguments";
 import { runSpecCommand } from "./cli-spec";
 import { CollisionError, ConflictError, InputError, RuntimeError } from "./errors";
+import { compileInteractiveAuthoringDocument } from "./interactive-authoring-compiler";
+import { interactiveAuthoringJsonSchema } from "./interactive-authoring-schema";
 import { readJson, sha256, writeResult } from "./io";
 import {
   bootstrapSample,
@@ -34,6 +36,8 @@ Commands:
   extend     validate an extension spec contract without rendering
   refresh    validate a refresh spec contract without rendering
   validate   validate a strict visual-note specification
+  authoring-schema  emit the renderer-independent interactive authoring JSON Schema
+  compile-authoring validate and compile before/after authoring JSON for a web renderer
   open       open a vault-relative artifact through the official CLI
   restore    validate a restore spec contract without mutation
   contract   emit the deterministic cross-agent contract sentinel
@@ -149,6 +153,19 @@ function run(command: string, argv: readonly string[]): void {
           revision: result.spec.revision,
           specSha256: result.sha256,
         },
+        options.json,
+      );
+      return;
+    }
+    case "authoring-schema": {
+      const options = parseOptions(argv, new Set());
+      writeResult(interactiveAuthoringJsonSchema(), options.json);
+      return;
+    }
+    case "compile-authoring": {
+      const options = parseOptions(argv, new Set(["--spec"]));
+      writeResult(
+        compileInteractiveAuthoringDocument(readJson(required(options, "--spec"))),
         options.json,
       );
       return;

@@ -17814,6 +17814,533 @@ function runSpecCommand(command, argv) {
   writeResult(result, options.json);
 }
 
+// src/interactive-authoring-schema.ts
+import { isAbsolute as isAbsolute7, normalize as normalize6 } from "path";
+
+// src/interactive-authoring-validation.ts
+function addIssue(context, path, code, message) {
+  context.addIssue({ code: "custom", path, message: `[${code}] ${message}` });
+}
+function graphemeCount(value) {
+  if (typeof Intl.Segmenter === "function") {
+    return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].length;
+  }
+  return [...value].length;
+}
+function checkUniqueExact(actual, expected, path, label, context) {
+  const duplicate = actual.find((id, index) => actual.indexOf(id) !== index);
+  if (duplicate !== undefined)
+    addIssue(context, path, "duplicate-order-id", `${label} repeats '${duplicate}'`);
+  const actualSet = new Set(actual);
+  const expectedSet = new Set(expected);
+  const missing = expected.filter((id) => !actualSet.has(id));
+  const unknown2 = actual.filter((id) => !expectedSet.has(id));
+  if (missing.length > 0 || unknown2.length > 0) {
+    addIssue(context, path, "order-set-mismatch", `${label} must exactly match the present semantic set; missing=${missing.join(",") || "none"}; unknown=${unknown2.join(",") || "none"}`);
+  }
+}
+function checkCopy(value, maxGraphemes, maxLines, path, context) {
+  const count = graphemeCount(value);
+  if (count > maxGraphemes) {
+    addIssue(context, path, "copy-budget", `${count} graphemes exceeds ${maxGraphemes}`);
+  }
+  const lines = value.split(/\r\n|\r|\n/u).length;
+  if (lines > maxLines)
+    addIssue(context, path, "line-budget", `${lines} explicit lines exceeds ${maxLines}`);
+}
+function checkFactEvidence(claim, path, context) {
+  if (claim.status === "fact" && claim.evidence.length === 0) {
+    addIssue(context, [...path, "evidence"], "fact-evidence-required", "fact claims require evidence");
+  }
+}
+function presentIds(baseline, patches) {
+  return Object.keys(baseline).filter((id) => patches[id]?.present !== false);
+}
+function refinePhase(scene, phaseName, context) {
+  const phase = scene.change[phaseName];
+  const entities = scene.semantics.entities;
+  const relations = scene.semantics.relations;
+  for (const id of Object.keys(phase.entities)) {
+    if (entities[id] === undefined) {
+      addIssue(context, ["change", phaseName, "entities", id], "unknown-patch-id", "entity patch has no baseline entity");
+    }
+  }
+  for (const id of Object.keys(phase.relations)) {
+    if (relations[id] === undefined) {
+      addIssue(context, ["change", phaseName, "relations", id], "unknown-patch-id", "relation patch has no baseline relation");
+    }
+  }
+  const entityIds = presentIds(entities, phase.entities);
+  const relationIds = presentIds(relations, phase.relations);
+  checkUniqueExact(phase.entityOrder, entityIds, ["change", phaseName, "entityOrder"], "entity order", context);
+  checkUniqueExact(phase.relationOrder, relationIds, ["change", phaseName, "relationOrder"], "relation order", context);
+  const presentEntities = new Set(entityIds);
+  for (const relationId of relationIds) {
+    const baseline = relations[relationId];
+    if (baseline === undefined)
+      continue;
+    const patch = phase.relations[relationId];
+    const relation = {
+      ...baseline,
+      ...patch,
+      from: patch?.from ?? baseline.from,
+      to: patch?.to ?? baseline.to,
+      status: patch?.status ?? baseline.status,
+      evidence: patch?.evidence ?? baseline.evidence
+    };
+    if (!presentEntities.has(relation.from) || !presentEntities.has(relation.to)) {
+      addIssue(context, ["change", phaseName, "relations", relationId], "dangling-phase-edge", `endpoints '${relation.from}' and '${relation.to}' must both be present`);
+    }
+    checkFactEvidence(relation, ["change", phaseName, "relations", relationId], context);
+  }
+  for (const entityId of entityIds) {
+    const baseline = entities[entityId];
+    if (baseline !== undefined) {
+      const patch = phase.entities[entityId];
+      checkFactEvidence({
+        ...baseline,
+        ...patch,
+        status: patch?.status ?? baseline.status,
+        evidence: patch?.evidence ?? baseline.evidence
+      }, ["change", phaseName, "entities", entityId], context);
+    }
+  }
+}
+function refineInteractiveScene(scene, context) {
+  const entityIds = Object.keys(scene.semantics.entities);
+  const relationIds = Object.keys(scene.semantics.relations);
+  const collisions = entityIds.filter((id) => relationIds.includes(id));
+  if (collisions.length > 0) {
+    addIssue(context, ["semantics"], "duplicate-semantic-id", `entity and relation IDs overlap: ${collisions.join(",")}`);
+  }
+  checkUniqueExact(scene.story.readingOrder, entityIds, ["story", "readingOrder"], "reading order", context);
+  for (const [id, entity] of Object.entries(scene.semantics.entities)) {
+    checkFactEvidence(entity, ["semantics", "entities", id], context);
+  }
+  for (const [id, relation] of Object.entries(scene.semantics.relations)) {
+    if (scene.semantics.entities[relation.from] === undefined || scene.semantics.entities[relation.to] === undefined) {
+      addIssue(context, ["semantics", "relations", id], "dangling-baseline-edge", "baseline endpoints must exist");
+    }
+    checkFactEvidence(relation, ["semantics", "relations", id], context);
+  }
+  refinePhase(scene, "before", context);
+  refinePhase(scene, "after", context);
+  const laneIds = scene.presentation.lanes.map((lane) => lane.id);
+  const duplicateLane = laneIds.find((id, index) => laneIds.indexOf(id) !== index);
+  if (duplicateLane !== undefined)
+    addIssue(context, ["presentation", "lanes"], "duplicate-lane-id", `lane '${duplicateLane}' repeats`);
+  checkUniqueExact(Object.keys(scene.presentation.placements), entityIds, ["presentation", "placements"], "placement coverage", context);
+  for (const [id, placement] of Object.entries(scene.presentation.placements)) {
+    if (!laneIds.includes(placement.lane)) {
+      addIssue(context, ["presentation", "placements", id, "lane"], "unknown-lane", `lane '${placement.lane}' is not declared`);
+    }
+  }
+  for (const relationId of Object.keys(scene.presentation.edgeRouting.relations ?? {})) {
+    if (!relationIds.includes(relationId)) {
+      addIssue(context, ["presentation", "edgeRouting", "relations", relationId], "unknown-routing-relation", "routing override has no baseline relation");
+    }
+  }
+  const { copy, nodeSizing } = scene.constraints;
+  if (nodeSizing.minWidth > nodeSizing.maxWidth) {
+    addIssue(context, ["constraints", "nodeSizing"], "invalid-node-width-range", "minWidth must not exceed maxWidth");
+  }
+  checkCopy(scene.story.question, copy.storyQuestionMaxGraphemes, copy.storyQuestionMaxLines, ["story", "question"], context);
+  checkCopy(scene.story.summary, copy.storySummaryMaxGraphemes, copy.storySummaryMaxLines, ["story", "summary"], context);
+  checkCopy(scene.story.takeaway, copy.storyTakeawayMaxGraphemes, copy.storyTakeawayMaxLines, ["story", "takeaway"], context);
+  for (const [id, entity] of Object.entries(scene.semantics.entities)) {
+    checkCopy(entity.title, copy.titleMaxGraphemes, copy.titleMaxLines, ["semantics", "entities", id, "title"], context);
+    checkCopy(entity.description, copy.descriptionMaxGraphemes, copy.descriptionMaxLines, ["semantics", "entities", id, "description"], context);
+  }
+  for (const [id, relation] of Object.entries(scene.semantics.relations)) {
+    checkCopy(relation.label, copy.edgeLabelMaxGraphemes, copy.edgeLabelMaxLines, ["semantics", "relations", id, "label"], context);
+  }
+  for (const phaseName of ["before", "after"]) {
+    for (const [id, patch] of Object.entries(scene.change[phaseName].entities)) {
+      if (patch.title !== undefined)
+        checkCopy(patch.title, copy.titleMaxGraphemes, copy.titleMaxLines, ["change", phaseName, "entities", id, "title"], context);
+      if (patch.description !== undefined)
+        checkCopy(patch.description, copy.descriptionMaxGraphemes, copy.descriptionMaxLines, ["change", phaseName, "entities", id, "description"], context);
+    }
+    for (const [id, patch] of Object.entries(scene.change[phaseName].relations)) {
+      if (patch.label !== undefined)
+        checkCopy(patch.label, copy.edgeLabelMaxGraphemes, copy.edgeLabelMaxLines, ["change", phaseName, "relations", id, "label"], context);
+    }
+  }
+}
+
+// src/interactive-authoring-schema.ts
+var identifierSchema = exports_external.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+var commitSchema = exports_external.string().regex(/^[0-9a-f]{7,64}$/);
+var confidenceSchema2 = exports_external.enum(["high", "medium", "low", "unknown"]);
+var changeStatusSchema = exports_external.enum([
+  "normal",
+  "added",
+  "removed",
+  "changed",
+  "blocked",
+  "unchanged",
+  "gap"
+]);
+var emphasisSchema = exports_external.enum(["primary", "secondary", "warning", "muted"]);
+var fallbackPlacementSchema = exports_external.enum([
+  "top-corridor",
+  "bottom-corridor",
+  "source-side",
+  "target-side",
+  "detached-callout"
+]);
+var labelPlacementSchema = exports_external.enum(["auto-corridor", ...fallbackPlacementSchema.options]);
+var sourceRootSchema = exports_external.string().refine((value) => isAbsolute7(value) && normalize6(value) === value, "source root must be a normalized absolute path");
+var claimFields2 = {
+  status: knowledgeStatusSchema,
+  confidence: confidenceSchema2,
+  evidence: exports_external.array(evidenceReferenceSchema)
+};
+var entityBaselineSchema = exports_external.object({
+  title: exports_external.string().trim().min(1),
+  description: exports_external.string().trim().min(1),
+  badge: exports_external.string().trim().min(1).nullable().optional(),
+  changeStatus: changeStatusSchema,
+  visual: exports_external.object({
+    category: visualCategorySchema,
+    shape: exports_external.enum(["rectangle", "ellipse", "diamond"])
+  }).strict(),
+  ...claimFields2
+}).strict();
+var relationBaselineSchema = exports_external.object({
+  from: identifierSchema,
+  to: identifierSchema,
+  label: exports_external.string().trim().min(1),
+  changeStatus: changeStatusSchema,
+  animated: exports_external.boolean(),
+  ...claimFields2
+}).strict();
+var entityPatchSchema = exports_external.object({
+  title: exports_external.string().trim().min(1).optional(),
+  description: exports_external.string().trim().min(1).optional(),
+  badge: exports_external.string().trim().min(1).nullable().optional(),
+  changeStatus: changeStatusSchema.optional(),
+  status: knowledgeStatusSchema.optional(),
+  confidence: confidenceSchema2.optional(),
+  evidence: exports_external.array(evidenceReferenceSchema).optional(),
+  present: exports_external.literal(false).optional()
+}).strict().refine((value) => Object.keys(value).length > 0, "entity patch must not be empty");
+var relationPatchSchema = exports_external.object({
+  from: identifierSchema.optional(),
+  to: identifierSchema.optional(),
+  label: exports_external.string().trim().min(1).optional(),
+  changeStatus: changeStatusSchema.optional(),
+  animated: exports_external.boolean().optional(),
+  status: knowledgeStatusSchema.optional(),
+  confidence: confidenceSchema2.optional(),
+  evidence: exports_external.array(evidenceReferenceSchema).optional(),
+  present: exports_external.literal(false).optional()
+}).strict().refine((value) => Object.keys(value).length > 0, "relation patch must not be empty");
+var phaseSchema = exports_external.object({
+  label: exports_external.string().trim().min(1),
+  entities: exports_external.record(identifierSchema, entityPatchSchema),
+  relations: exports_external.record(identifierSchema, relationPatchSchema),
+  entityOrder: exports_external.array(identifierSchema).min(1),
+  relationOrder: exports_external.array(identifierSchema)
+}).strict();
+var copyConstraintsSchema = exports_external.object({
+  storyQuestionMaxGraphemes: exports_external.number().int().positive(),
+  storySummaryMaxGraphemes: exports_external.number().int().positive(),
+  storyTakeawayMaxGraphemes: exports_external.number().int().positive(),
+  titleMaxGraphemes: exports_external.number().int().positive(),
+  descriptionMaxGraphemes: exports_external.number().int().positive(),
+  edgeLabelMaxGraphemes: exports_external.number().int().positive(),
+  storyQuestionMaxLines: exports_external.number().int().positive(),
+  storySummaryMaxLines: exports_external.number().int().positive(),
+  storyTakeawayMaxLines: exports_external.number().int().positive(),
+  titleMaxLines: exports_external.number().int().positive(),
+  descriptionMaxLines: exports_external.number().int().positive(),
+  edgeLabelMaxLines: exports_external.number().int().positive()
+}).strict();
+var interactiveSceneBaseSchema = exports_external.object({
+  semanticId: identifierSchema,
+  kind: exports_external.enum(visualKindValues),
+  story: exports_external.object({
+    question: exports_external.string().trim().min(1),
+    summary: exports_external.string().trim().min(1),
+    takeaway: exports_external.string().trim().min(1),
+    readingOrder: exports_external.array(identifierSchema).min(1)
+  }).strict(),
+  semantics: exports_external.object({
+    entities: exports_external.record(identifierSchema, entityBaselineSchema),
+    relations: exports_external.record(identifierSchema, relationBaselineSchema)
+  }).strict(),
+  change: exports_external.object({ before: phaseSchema, after: phaseSchema }).strict(),
+  presentation: exports_external.object({
+    layout: exports_external.enum(["layered", "frames", "timeline", "hub", "trust-boundary", "lanes"]),
+    readingGuide: exports_external.string().trim().min(1),
+    outcome: exports_external.string().trim().min(1),
+    lanes: exports_external.array(exports_external.object({
+      id: identifierSchema,
+      label: exports_external.string().trim().min(1),
+      purpose: exports_external.string().trim().min(1)
+    }).strict()).min(1),
+    placements: exports_external.record(identifierSchema, exports_external.object({
+      column: exports_external.number().int().nonnegative(),
+      lane: identifierSchema,
+      order: exports_external.number().int().nonnegative(),
+      role: exports_external.string().trim().min(1),
+      emphasis: emphasisSchema
+    }).strict()),
+    edgeRouting: exports_external.object({
+      defaultLabelPlacement: exports_external.literal("auto-corridor"),
+      fallback: exports_external.array(fallbackPlacementSchema).min(1),
+      relations: exports_external.record(identifierSchema, exports_external.object({
+        labelPlacement: labelPlacementSchema.optional(),
+        fallback: exports_external.array(fallbackPlacementSchema).min(1).optional()
+      }).strict().refine((value) => Object.keys(value).length > 0, "routing override must not be empty")).optional()
+    }).strict()
+  }).strict(),
+  constraints: exports_external.object({
+    viewport: exports_external.object({ width: exports_external.number().int().positive(), height: exports_external.number().int().positive() }).strict(),
+    nodeSizing: exports_external.object({
+      aspectRatio: exports_external.literal(1.5),
+      minWidth: exports_external.number().int().positive(),
+      maxWidth: exports_external.number().int().positive(),
+      widthStep: exports_external.number().int().positive()
+    }).strict(),
+    layout: exports_external.object({
+      maxColumns: exports_external.number().int().positive(),
+      maxNodesPerColumn: exports_external.number().int().positive(),
+      minimumZoom: exports_external.number().positive().max(1),
+      columnGap: exports_external.number().int().nonnegative(),
+      rowGap: exports_external.number().int().nonnegative(),
+      laneGap: exports_external.number().int().nonnegative(),
+      minimumCorridor: exports_external.number().int().nonnegative()
+    }).strict(),
+    copy: copyConstraintsSchema
+  }).strict()
+}).strict();
+var interactiveSceneSchema = interactiveSceneBaseSchema.superRefine(refineInteractiveScene);
+var interactiveAuthoringDocumentSchema = exports_external.object({
+  contractVersion: exports_external.literal(1),
+  direction: exports_external.literal("left-to-right"),
+  source: exports_external.object({
+    root: sourceRootSchema,
+    before: exports_external.object({ commit: commitSchema, label: exports_external.string().trim().min(1) }).strict(),
+    after: exports_external.object({ commit: commitSchema, label: exports_external.string().trim().min(1) }).strict()
+  }).strict(),
+  scenes: exports_external.array(interactiveSceneSchema).min(1)
+}).strict().superRefine((document, context) => {
+  const ids = document.scenes.map((scene) => scene.semanticId);
+  const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
+  if (duplicate !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["scenes"],
+      message: `[duplicate-scene-id] scene '${duplicate}' repeats`
+    });
+  }
+});
+function parseInteractiveAuthoringDocument(input) {
+  return interactiveAuthoringDocumentSchema.parse(input);
+}
+function interactiveAuthoringJsonSchema() {
+  return exports_external.toJSONSchema(interactiveAuthoringDocumentSchema, { target: "draft-2020-12" });
+}
+
+// src/interactive-authoring-compiler.ts
+function graphemes(value) {
+  if (typeof Intl.Segmenter === "function") {
+    return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].map((segment) => segment.segment);
+  }
+  return [...value];
+}
+function estimateNodeWidth(scene, entity) {
+  const { minWidth, maxWidth, widthStep } = scene.constraints.nodeSizing;
+  const titleDemand = graphemes(entity.title).length;
+  const descriptionDemand = Math.ceil(graphemes(entity.description).length / 2);
+  const demand = Math.max(titleDemand, descriptionDemand);
+  const steps = Math.max(0, Math.ceil((demand - 24) / 18));
+  return Math.min(maxWidth, Math.max(minWidth, minWidth + steps * widthStep));
+}
+function mergeEntity(scene, phase, id) {
+  const baseline = scene.semantics.entities[id];
+  if (baseline === undefined)
+    return;
+  const patch = scene.change[phase].entities[id];
+  if (patch?.present === false)
+    return;
+  const merged = { ...baseline, ...patch };
+  if (merged.badge === null)
+    delete merged.badge;
+  return merged;
+}
+function mergeRelation(scene, phase, id) {
+  const baseline = scene.semantics.relations[id];
+  if (baseline === undefined)
+    return;
+  const patch = scene.change[phase].relations[id];
+  if (patch?.present === false)
+    return;
+  return { ...baseline, ...patch };
+}
+function compileNode(scene, phase, id) {
+  const entity = mergeEntity(scene, phase, id);
+  if (entity === undefined)
+    return;
+  const estimatedWidth = estimateNodeWidth(scene, entity);
+  const result = {
+    id,
+    title: entity.title,
+    description: entity.description,
+    changeStatus: entity.changeStatus,
+    visual: entity.visual,
+    status: entity.status,
+    confidence: entity.confidence,
+    evidence: entity.evidence,
+    estimatedWidth,
+    estimatedHeight: estimatedWidth / scene.constraints.nodeSizing.aspectRatio
+  };
+  if (entity.badge !== undefined && entity.badge !== null)
+    return { ...result, badge: entity.badge };
+  return result;
+}
+function estimateLabelWidth(label) {
+  const width = graphemes(label).reduce((total, value) => total + (/^[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af]$/u.test(value) ? 13 : 7.2), 0);
+  return Math.ceil(width + 16);
+}
+function fallbackResolves(placement, available, required3, scene) {
+  if (placement === "detached-callout")
+    return true;
+  if (placement === "source-side" || placement === "target-side") {
+    return Math.max(scene.constraints.layout.rowGap, scene.constraints.layout.laneGap) >= required3;
+  }
+  return available >= required3;
+}
+function phaseGeometry(scene, nodes) {
+  const placements = scene.presentation.placements;
+  const activePlacements = nodes.map((node) => ({ node, placement: placements[node.id] }));
+  const columns = activePlacements.length === 0 ? 0 : Math.max(...activePlacements.map(({ placement }) => placement?.column ?? 0)) + 1;
+  const columnWidths = Array.from({ length: columns }, () => 0);
+  const columnHeights = Array.from({ length: columns }, () => 0);
+  const columnCounts = Array.from({ length: columns }, () => 0);
+  const laneOrder = new Map(scene.presentation.lanes.map((lane, index) => [lane.id, index]));
+  for (let column = 0;column < columns; column += 1) {
+    const entries = activePlacements.filter(({ placement }) => placement?.column === column).sort((left, right) => (laneOrder.get(left.placement?.lane ?? "") ?? 0) - (laneOrder.get(right.placement?.lane ?? "") ?? 0) || (left.placement?.order ?? 0) - (right.placement?.order ?? 0));
+    columnCounts[column] = entries.length;
+    let previousLane;
+    entries.forEach(({ node, placement }, index) => {
+      columnWidths[column] = Math.max(columnWidths[column] ?? 0, node.estimatedWidth);
+      if (index > 0) {
+        columnHeights[column] = (columnHeights[column] ?? 0) + (previousLane === placement?.lane ? scene.constraints.layout.rowGap : scene.constraints.layout.laneGap);
+      }
+      columnHeights[column] = (columnHeights[column] ?? 0) + node.estimatedHeight;
+      previousLane = placement?.lane;
+    });
+  }
+  const estimatedWidth = columnWidths.reduce((total, width) => total + width, 0) + Math.max(0, columns - 1) * scene.constraints.layout.columnGap;
+  const estimatedHeight = Math.max(0, ...columnHeights);
+  const estimatedZoom = estimatedWidth > 0 && estimatedHeight > 0 ? Math.min(1, scene.constraints.viewport.width / estimatedWidth, scene.constraints.viewport.height / estimatedHeight) : 1;
+  return {
+    estimatedWidth,
+    estimatedHeight,
+    estimatedZoom,
+    columns,
+    maxNodesPerColumn: Math.max(0, ...columnCounts)
+  };
+}
+function compilePhase(scene, phase, failures) {
+  const authored = scene.change[phase];
+  const nodes = authored.entityOrder.flatMap((id) => {
+    const node = compileNode(scene, phase, id);
+    return node === undefined ? [] : [node];
+  });
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = [];
+  const corridors = [];
+  for (const id of authored.relationOrder) {
+    const relation = mergeRelation(scene, phase, id);
+    if (relation === undefined || !nodeIds.has(relation.from) || !nodeIds.has(relation.to))
+      continue;
+    const sourcePlacement = scene.presentation.placements[relation.from];
+    const targetPlacement = scene.presentation.placements[relation.to];
+    if (sourcePlacement === undefined || targetPlacement === undefined)
+      continue;
+    const horizontal = sourcePlacement.column !== targetPlacement.column;
+    const available = horizontal ? scene.constraints.layout.columnGap : sourcePlacement.lane === targetPlacement.lane ? scene.constraints.layout.rowGap : scene.constraints.layout.laneGap;
+    const required3 = Math.max(scene.constraints.layout.minimumCorridor, horizontal ? estimateLabelWidth(relation.label) : 25);
+    const directFits = available >= required3;
+    const override = scene.presentation.edgeRouting.relations?.[id];
+    const fallbacks = override?.fallback ?? scene.presentation.edgeRouting.fallback;
+    const requested = override?.labelPlacement ?? "auto-corridor";
+    const requestedFallback = requested === "auto-corridor" ? undefined : requested;
+    const resolvedBy = directFits ? undefined : requestedFallback !== undefined && fallbackResolves(requestedFallback, available, required3, scene) ? requestedFallback : fallbacks.find((candidate) => fallbackResolves(candidate, available, required3, scene));
+    if (!directFits && resolvedBy === undefined) {
+      failures.push(`${scene.semanticId}/${phase}/${id}: no declared edge-label fallback fits`);
+    }
+    corridors.push({
+      relationId: id,
+      required: required3,
+      available,
+      directFits,
+      ...resolvedBy === undefined ? {} : { resolvedBy }
+    });
+    edges.push({
+      ...relation,
+      id,
+      source: relation.from,
+      target: relation.to,
+      labelPlacement: directFits ? "auto-corridor" : resolvedBy ?? "auto-corridor"
+    });
+  }
+  const geometry = phaseGeometry(scene, nodes);
+  if (geometry.columns > scene.constraints.layout.maxColumns) {
+    failures.push(`${scene.semanticId}/${phase}: ${geometry.columns} columns exceeds ${scene.constraints.layout.maxColumns}`);
+  }
+  if (geometry.maxNodesPerColumn > scene.constraints.layout.maxNodesPerColumn) {
+    failures.push(`${scene.semanticId}/${phase}: ${geometry.maxNodesPerColumn} nodes per column exceeds ${scene.constraints.layout.maxNodesPerColumn}`);
+  }
+  if (geometry.estimatedZoom < scene.constraints.layout.minimumZoom) {
+    failures.push(`${scene.semanticId}/${phase}: estimated zoom ${geometry.estimatedZoom.toFixed(3)} is below ${scene.constraints.layout.minimumZoom}`);
+  }
+  return {
+    label: authored.label,
+    nodes,
+    edges,
+    feasibility: { ...geometry, corridors }
+  };
+}
+function compileScene(scene, failures) {
+  return {
+    id: scene.semanticId,
+    kind: scene.kind,
+    story: scene.story,
+    presentation: scene.presentation,
+    constraints: scene.constraints,
+    before: compilePhase(scene, "before", failures),
+    after: compilePhase(scene, "after", failures)
+  };
+}
+function compileInteractiveAuthoringDocument(raw) {
+  const document = parseInteractiveAuthoringDocument(raw);
+  const failures = [];
+  const scenes = document.scenes.map((scene) => compileScene(scene, failures));
+  if (failures.length > 0) {
+    throw new InputError(`interactive authoring feasibility failed:
+- ${failures.join(`
+- `)}`);
+  }
+  return {
+    contractVersion: 1,
+    direction: "left-to-right",
+    source: document.source,
+    scenes,
+    measurementPolicy: {
+      mode: "dom-final-correction",
+      nodeAspectRatio: 1.5,
+      sizing: "measure-content-then-clamp",
+      edgeLabels: "route-after-node-measurement",
+      exactPixelsGuaranteed: false
+    }
+  };
+}
+
 // src/session-export.ts
 import {
   lstatSync as lstatSync8,
@@ -17825,7 +18352,7 @@ import {
   rmSync as rmSync5,
   writeFileSync as writeFileSync7
 } from "fs";
-import { dirname as dirname9, isAbsolute as isAbsolute7, join as join14, normalize as normalize6 } from "path";
+import { dirname as dirname9, isAbsolute as isAbsolute8, join as join14, normalize as normalize7 } from "path";
 
 // src/svg-gallery.ts
 var CARD_PADDING = 32;
@@ -17957,7 +18484,7 @@ var kindOrder = new Map([
   ["code-exploration", 9]
 ]);
 function realDirectory(path, label) {
-  if (!isAbsolute7(path) || normalize6(path) !== path || path === "/") {
+  if (!isAbsolute8(path) || normalize7(path) !== path || path === "/") {
     throw new InputError(`${label} must be a normalized absolute non-root path`);
   }
   let resolved;
@@ -18142,6 +18669,8 @@ Commands:
   extend     validate an extension spec contract without rendering
   refresh    validate a refresh spec contract without rendering
   validate   validate a strict visual-note specification
+  authoring-schema  emit the renderer-independent interactive authoring JSON Schema
+  compile-authoring validate and compile before/after authoring JSON for a web renderer
   open       open a vault-relative artifact through the official CLI
   restore    validate a restore spec contract without mutation
   contract   emit the deterministic cross-agent contract sentinel
@@ -18227,6 +18756,16 @@ function run4(command, argv) {
         revision: result.spec.revision,
         specSha256: result.sha256
       }, options.json);
+      return;
+    }
+    case "authoring-schema": {
+      const options = parseOptions(argv, new Set);
+      writeResult(interactiveAuthoringJsonSchema(), options.json);
+      return;
+    }
+    case "compile-authoring": {
+      const options = parseOptions(argv, new Set(["--spec"]));
+      writeResult(compileInteractiveAuthoringDocument(readJson(required2(options, "--spec"))), options.json);
       return;
     }
     case "open": {
