@@ -17853,6 +17853,49 @@ function checkFactEvidence(claim, path, context) {
     addIssue(context, [...path, "evidence"], "fact-evidence-required", "fact claims require evidence");
   }
 }
+function checkUniqueEvidenceIds(evidence, path, context) {
+  const ids = evidence.map((reference) => reference.id);
+  const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
+  if (duplicate !== undefined) {
+    addIssue(context, path, "duplicate-evidence-id", `evidence ID '${duplicate}' repeats`);
+  }
+}
+function checkDetailEvidence(entity, path, context) {
+  const duplicate = entity.details.evidenceIds.find((id, index, ids) => ids.indexOf(id) !== index);
+  if (duplicate !== undefined) {
+    addIssue(context, [...path, "details", "evidenceIds"], "duplicate-detail-evidence-id", `detail evidence ID '${duplicate}' repeats`);
+  }
+  checkDetailEvidenceResolution(entity, path, [...path, "details", "evidenceIds"], context);
+}
+function checkDetailEvidenceResolution(entity, detailPath, issuePath, context) {
+  const available = new Set(entity.evidence.map((reference) => reference.id));
+  const unresolved = entity.details.evidenceIds.filter((id) => !available.has(id));
+  if (unresolved.length > 0) {
+    addIssue(context, issuePath, "unresolved-detail-evidence-id", `detail evidence IDs at ${detailPath.join(".")} must resolve against this entity evidence set: ${unresolved.join(",")}`);
+  }
+}
+function checkDetailDimension(dimension, path, context) {
+  const duplicate = dimension.identifiers.find((identifier, index, identifiers) => identifiers.indexOf(identifier) !== index);
+  if (duplicate !== undefined) {
+    addIssue(context, [...path, "identifiers"], "duplicate-detail-identifier", `identifier '${duplicate}' repeats`);
+  }
+  for (const identifier of dimension.identifiers) {
+    if (!dimension.source.includes(identifier)) {
+      addIssue(context, [...path, "source"], "detail-identifier-not-in-source", `canonical source must preserve identifier '${identifier}' exactly`);
+    }
+    for (const [level, projection] of Object.entries(dimension.projections)) {
+      if (!projection.includes(identifier)) {
+        addIssue(context, [...path, "projections", level], "detail-identifier-not-preserved", `${level} projection must preserve identifier '${identifier}' exactly`);
+      }
+    }
+  }
+  const beginnerLength = graphemeCount(dimension.projections.beginner);
+  const intermediateLength = graphemeCount(dimension.projections.intermediate);
+  const expertLength = graphemeCount(dimension.projections.expert);
+  if (beginnerLength < intermediateLength || intermediateLength < expertLength) {
+    addIssue(context, [...path, "projections"], "detail-projection-order", `projection lengths must satisfy beginner (${beginnerLength}) >= intermediate (${intermediateLength}) >= expert (${expertLength})`);
+  }
+}
 function presentIds(baseline, patches) {
   return Object.keys(baseline).filter((id) => patches[id]?.present !== false);
 }
@@ -17892,17 +17935,22 @@ function refinePhase(scene, phaseName, context) {
       addIssue(context, ["change", phaseName, "relations", relationId], "dangling-phase-edge", `endpoints '${relation.from}' and '${relation.to}' must both be present`);
     }
     checkFactEvidence(relation, ["change", phaseName, "relations", relationId], context);
+    checkUniqueEvidenceIds(relation.evidence, ["change", phaseName, "relations", relationId, "evidence"], context);
   }
   for (const entityId of entityIds) {
     const baseline = entities[entityId];
     if (baseline !== undefined) {
       const patch = phase.entities[entityId];
-      checkFactEvidence({
+      const entity = {
         ...baseline,
         ...patch,
         status: patch?.status ?? baseline.status,
         evidence: patch?.evidence ?? baseline.evidence
-      }, ["change", phaseName, "entities", entityId], context);
+      };
+      const path = ["change", phaseName, "entities", entityId];
+      checkFactEvidence(entity, path, context);
+      checkUniqueEvidenceIds(entity.evidence, [...path, "evidence"], context);
+      checkDetailEvidenceResolution(entity, ["semantics", "entities", entityId, "details", "evidenceIds"], [...path, "evidence"], context);
     }
   }
 }
@@ -17916,12 +17964,15 @@ function refineInteractiveScene(scene, context) {
   checkUniqueExact(scene.story.readingOrder, entityIds, ["story", "readingOrder"], "reading order", context);
   for (const [id, entity] of Object.entries(scene.semantics.entities)) {
     checkFactEvidence(entity, ["semantics", "entities", id], context);
+    checkUniqueEvidenceIds(entity.evidence, ["semantics", "entities", id, "evidence"], context);
+    checkDetailEvidence(entity, ["semantics", "entities", id], context);
   }
   for (const [id, relation] of Object.entries(scene.semantics.relations)) {
     if (scene.semantics.entities[relation.from] === undefined || scene.semantics.entities[relation.to] === undefined) {
       addIssue(context, ["semantics", "relations", id], "dangling-baseline-edge", "baseline endpoints must exist");
     }
     checkFactEvidence(relation, ["semantics", "relations", id], context);
+    checkUniqueEvidenceIds(relation.evidence, ["semantics", "relations", id, "evidence"], context);
   }
   refinePhase(scene, "before", context);
   refinePhase(scene, "after", context);
@@ -17940,9 +17991,36 @@ function refineInteractiveScene(scene, context) {
       addIssue(context, ["presentation", "edgeRouting", "relations", relationId], "unknown-routing-relation", "routing override has no baseline relation");
     }
   }
-  const { copy, nodeSizing } = scene.constraints;
+  const { copy, nodeSizing, typography } = scene.constraints;
   if (nodeSizing.minWidth > nodeSizing.maxWidth) {
     addIssue(context, ["constraints", "nodeSizing"], "invalid-node-width-range", "minWidth must not exceed maxWidth");
+  }
+  if (copy.detailExpertMaxGraphemes > copy.detailIntermediateMaxGraphemes || copy.detailIntermediateMaxGraphemes > copy.detailBeginnerMaxGraphemes) {
+    addIssue(context, ["constraints", "copy"], "invalid-projection-grapheme-budgets", "detail grapheme budgets must satisfy expert <= intermediate <= beginner");
+  }
+  if (copy.detailExpertMaxLines > copy.detailIntermediateMaxLines || copy.detailIntermediateMaxLines > copy.detailBeginnerMaxLines) {
+    addIssue(context, ["constraints", "copy"], "invalid-projection-line-budgets", "detail line budgets must satisfy expert <= intermediate <= beginner");
+  }
+  const minimumZoom = scene.constraints.layout.minimumZoom;
+  const transformedText = [
+    ["nodeTitleMinPx", typography.nodeTitleMinPx],
+    ["nodeBodyMinPx", typography.nodeBodyMinPx],
+    ["edgeLabelMinPx", typography.edgeLabelMinPx]
+  ];
+  const untransformedText = [
+    ["uiMetadataMinPx", typography.uiMetadataMinPx],
+    ["detailTextMinPx", typography.detailTextMinPx]
+  ];
+  for (const [field, nominalSize] of transformedText) {
+    const effectiveSize = nominalSize * minimumZoom;
+    if (effectiveSize < typography.minimumEffectiveTextPx) {
+      addIssue(context, ["constraints", "typography", field], "effective-text-floor", `${nominalSize}px at minimum zoom ${minimumZoom} becomes ${effectiveSize.toFixed(2)}px; require at least ${typography.minimumEffectiveTextPx}px`);
+    }
+  }
+  for (const [field, nominalSize] of untransformedText) {
+    if (nominalSize < typography.minimumEffectiveTextPx) {
+      addIssue(context, ["constraints", "typography", field], "effective-text-floor", `${nominalSize}px outside the transformed canvas must remain at least ${typography.minimumEffectiveTextPx}px`);
+    }
   }
   checkCopy(scene.story.question, copy.storyQuestionMaxGraphemes, copy.storyQuestionMaxLines, ["story", "question"], context);
   checkCopy(scene.story.summary, copy.storySummaryMaxGraphemes, copy.storySummaryMaxLines, ["story", "summary"], context);
@@ -17950,6 +18028,18 @@ function refineInteractiveScene(scene, context) {
   for (const [id, entity] of Object.entries(scene.semantics.entities)) {
     checkCopy(entity.title, copy.titleMaxGraphemes, copy.titleMaxLines, ["semantics", "entities", id, "title"], context);
     checkCopy(entity.description, copy.descriptionMaxGraphemes, copy.descriptionMaxLines, ["semantics", "entities", id, "description"], context);
+    if (entity.badge !== undefined && entity.badge !== null) {
+      checkCopy(entity.badge, copy.badgeMaxGraphemes, copy.badgeMaxLines, ["semantics", "entities", id, "badge"], context);
+    }
+    for (const field of ["role", "before", "after", "reason", "impact"]) {
+      const dimension = entity.details[field];
+      const path = ["semantics", "entities", id, "details", field];
+      checkDetailDimension(dimension, path, context);
+      checkCopy(dimension.source, copy.detailSourceMaxGraphemes, copy.detailSourceMaxLines, [...path, "source"], context);
+      checkCopy(dimension.projections.beginner, copy.detailBeginnerMaxGraphemes, copy.detailBeginnerMaxLines, [...path, "projections", "beginner"], context);
+      checkCopy(dimension.projections.intermediate, copy.detailIntermediateMaxGraphemes, copy.detailIntermediateMaxLines, [...path, "projections", "intermediate"], context);
+      checkCopy(dimension.projections.expert, copy.detailExpertMaxGraphemes, copy.detailExpertMaxLines, [...path, "projections", "expert"], context);
+    }
   }
   for (const [id, relation] of Object.entries(scene.semantics.relations)) {
     checkCopy(relation.label, copy.edgeLabelMaxGraphemes, copy.edgeLabelMaxLines, ["semantics", "relations", id, "label"], context);
@@ -17960,6 +18050,8 @@ function refineInteractiveScene(scene, context) {
         checkCopy(patch.title, copy.titleMaxGraphemes, copy.titleMaxLines, ["change", phaseName, "entities", id, "title"], context);
       if (patch.description !== undefined)
         checkCopy(patch.description, copy.descriptionMaxGraphemes, copy.descriptionMaxLines, ["change", phaseName, "entities", id, "description"], context);
+      if (patch.badge !== undefined && patch.badge !== null)
+        checkCopy(patch.badge, copy.badgeMaxGraphemes, copy.badgeMaxLines, ["change", phaseName, "entities", id, "badge"], context);
     }
     for (const [id, patch] of Object.entries(scene.change[phaseName].relations)) {
       if (patch.label !== undefined)
@@ -17991,14 +18083,35 @@ var fallbackPlacementSchema = exports_external.enum([
 ]);
 var labelPlacementSchema = exports_external.enum(["auto-corridor", ...fallbackPlacementSchema.options]);
 var sourceRootSchema = exports_external.string().refine((value) => isAbsolute7(value) && normalize6(value) === value, "source root must be a normalized absolute path");
+var identifiedEvidenceReferenceSchema = evidenceReferenceSchema.safeExtend({
+  id: identifierSchema
+});
 var claimFields2 = {
   status: knowledgeStatusSchema,
   confidence: confidenceSchema2,
-  evidence: exports_external.array(evidenceReferenceSchema)
+  evidence: exports_external.array(identifiedEvidenceReferenceSchema)
 };
+var detailDimensionSchema = exports_external.object({
+  source: exports_external.string().trim().min(1),
+  identifiers: exports_external.array(exports_external.string().trim().min(1)),
+  projections: exports_external.object({
+    beginner: exports_external.string().trim().min(1),
+    intermediate: exports_external.string().trim().min(1),
+    expert: exports_external.string().trim().min(1)
+  }).strict()
+}).strict();
+var entityDetailsSchema = exports_external.object({
+  role: detailDimensionSchema,
+  before: detailDimensionSchema,
+  after: detailDimensionSchema,
+  reason: detailDimensionSchema,
+  impact: detailDimensionSchema,
+  evidenceIds: exports_external.array(identifierSchema).min(1)
+}).strict();
 var entityBaselineSchema = exports_external.object({
   title: exports_external.string().trim().min(1),
   description: exports_external.string().trim().min(1),
+  details: entityDetailsSchema,
   badge: exports_external.string().trim().min(1).nullable().optional(),
   changeStatus: changeStatusSchema,
   visual: exports_external.object({
@@ -18022,7 +18135,7 @@ var entityPatchSchema = exports_external.object({
   changeStatus: changeStatusSchema.optional(),
   status: knowledgeStatusSchema.optional(),
   confidence: confidenceSchema2.optional(),
-  evidence: exports_external.array(evidenceReferenceSchema).optional(),
+  evidence: exports_external.array(identifiedEvidenceReferenceSchema).optional(),
   present: exports_external.literal(false).optional()
 }).strict().refine((value) => Object.keys(value).length > 0, "entity patch must not be empty");
 var relationPatchSchema = exports_external.object({
@@ -18033,7 +18146,7 @@ var relationPatchSchema = exports_external.object({
   animated: exports_external.boolean().optional(),
   status: knowledgeStatusSchema.optional(),
   confidence: confidenceSchema2.optional(),
-  evidence: exports_external.array(evidenceReferenceSchema).optional(),
+  evidence: exports_external.array(identifiedEvidenceReferenceSchema).optional(),
   present: exports_external.literal(false).optional()
 }).strict().refine((value) => Object.keys(value).length > 0, "relation patch must not be empty");
 var phaseSchema = exports_external.object({
@@ -18049,13 +18162,41 @@ var copyConstraintsSchema = exports_external.object({
   storyTakeawayMaxGraphemes: exports_external.number().int().positive(),
   titleMaxGraphemes: exports_external.number().int().positive(),
   descriptionMaxGraphemes: exports_external.number().int().positive(),
+  badgeMaxGraphemes: exports_external.number().int().positive(),
   edgeLabelMaxGraphemes: exports_external.number().int().positive(),
+  detailSourceMaxGraphemes: exports_external.number().int().positive(),
+  detailBeginnerMaxGraphemes: exports_external.number().int().positive(),
+  detailIntermediateMaxGraphemes: exports_external.number().int().positive(),
+  detailExpertMaxGraphemes: exports_external.number().int().positive(),
   storyQuestionMaxLines: exports_external.number().int().positive(),
   storySummaryMaxLines: exports_external.number().int().positive(),
   storyTakeawayMaxLines: exports_external.number().int().positive(),
   titleMaxLines: exports_external.number().int().positive(),
   descriptionMaxLines: exports_external.number().int().positive(),
-  edgeLabelMaxLines: exports_external.number().int().positive()
+  badgeMaxLines: exports_external.number().int().positive(),
+  edgeLabelMaxLines: exports_external.number().int().positive(),
+  detailSourceMaxLines: exports_external.number().int().positive(),
+  detailBeginnerMaxLines: exports_external.number().int().positive(),
+  detailIntermediateMaxLines: exports_external.number().int().positive(),
+  detailExpertMaxLines: exports_external.number().int().positive()
+}).strict();
+var interactionSchema = exports_external.object({
+  detailLevel: exports_external.object({
+    options: exports_external.tuple([exports_external.literal("beginner"), exports_external.literal("intermediate"), exports_external.literal("expert")]),
+    default: exports_external.enum(["beginner", "intermediate", "expert"]),
+    accessibleLabel: exports_external.string().trim().min(1)
+  }).strict(),
+  canonicalSource: exports_external.object({
+    available: exports_external.literal(true),
+    accessibleLabel: exports_external.string().trim().min(1)
+  }).strict(),
+  fontScale: exports_external.object({
+    minimumPercent: exports_external.literal(100),
+    maximumPercent: exports_external.literal(150),
+    defaultPercent: exports_external.literal(100),
+    stepPercent: exports_external.literal(5),
+    accessibleLabel: exports_external.string().trim().min(1)
+  }).strict()
 }).strict();
 var interactiveSceneBaseSchema = exports_external.object({
   semanticId: identifierSchema,
@@ -18113,13 +18254,22 @@ var interactiveSceneBaseSchema = exports_external.object({
       laneGap: exports_external.number().int().nonnegative(),
       minimumCorridor: exports_external.number().int().nonnegative()
     }).strict(),
-    copy: copyConstraintsSchema
+    copy: copyConstraintsSchema,
+    typography: exports_external.object({
+      nodeTitleMinPx: exports_external.number().min(24),
+      nodeBodyMinPx: exports_external.number().min(20),
+      edgeLabelMinPx: exports_external.number().min(20),
+      uiMetadataMinPx: exports_external.number().min(20),
+      detailTextMinPx: exports_external.number().min(20),
+      minimumEffectiveTextPx: exports_external.number().min(14)
+    }).strict()
   }).strict()
 }).strict();
 var interactiveSceneSchema = interactiveSceneBaseSchema.superRefine(refineInteractiveScene);
 var interactiveAuthoringDocumentSchema = exports_external.object({
-  contractVersion: exports_external.literal(1),
+  contractVersion: exports_external.literal(2),
   direction: exports_external.literal("left-to-right"),
+  interaction: interactionSchema,
   source: exports_external.object({
     root: sourceRootSchema,
     before: exports_external.object({ commit: commitSchema, label: exports_external.string().trim().min(1) }).strict(),
@@ -18153,9 +18303,11 @@ function graphemes(value) {
 }
 function estimateNodeWidth(scene, entity) {
   const { minWidth, maxWidth, widthStep } = scene.constraints.nodeSizing;
-  const titleDemand = graphemes(entity.title).length;
-  const descriptionDemand = Math.ceil(graphemes(entity.description).length / 2);
-  const demand = Math.max(titleDemand, descriptionDemand);
+  const maxFontScale = 1.5;
+  const titleDemand = graphemes(entity.title).length * (scene.constraints.typography.nodeTitleMinPx / 24) * maxFontScale;
+  const descriptionDemand = Math.ceil(graphemes(entity.description).length / 2) * (scene.constraints.typography.nodeBodyMinPx / 20) * maxFontScale;
+  const badgeDemand = graphemes(entity.badge ?? "").length * (scene.constraints.typography.nodeBodyMinPx / 20) * maxFontScale;
+  const demand = Math.max(titleDemand, descriptionDemand, badgeDemand);
   const steps = Math.max(0, Math.ceil((demand - 24) / 18));
   return Math.min(maxWidth, Math.max(minWidth, minWidth + steps * widthStep));
 }
@@ -18189,11 +18341,12 @@ function compileNode(scene, phase, id) {
     id,
     title: entity.title,
     description: entity.description,
+    details: structuredClone(entity.details),
     changeStatus: entity.changeStatus,
     visual: entity.visual,
     status: entity.status,
     confidence: entity.confidence,
-    evidence: entity.evidence,
+    evidence: structuredClone(entity.evidence),
     estimatedWidth,
     estimatedHeight: estimatedWidth / scene.constraints.nodeSizing.aspectRatio
   };
@@ -18201,9 +18354,14 @@ function compileNode(scene, phase, id) {
     return { ...result, badge: entity.badge };
   return result;
 }
-function estimateLabelWidth(label) {
-  const width = graphemes(label).reduce((total, value) => total + (/^[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af]$/u.test(value) ? 13 : 7.2), 0);
+function estimateLabelWidth(label, fontSizePx) {
+  const width = graphemes(label).reduce((total, value) => total + (/^[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af]$/u.test(value) ? fontSizePx : fontSizePx * 0.56), 0);
   return Math.ceil(width + 16);
+}
+function estimateLabelHeight(label, fontSizePx, maxLineWidth) {
+  const contentWidth = Math.max(1, maxLineWidth - 16);
+  const visualLines = label.split(/\r\n|\r|\n/u).reduce((total, line) => total + Math.max(1, Math.ceil((estimateLabelWidth(line, fontSizePx) - 16) / contentWidth)), 0);
+  return Math.ceil(visualLines * fontSizePx * 1.2 + 16);
 }
 function fallbackResolves(placement, available, required3, scene) {
   if (placement === "detached-callout")
@@ -18245,6 +18403,19 @@ function phaseGeometry(scene, nodes) {
     maxNodesPerColumn: Math.max(0, ...columnCounts)
   };
 }
+function effectiveTypography(scene, zoom) {
+  const typography = scene.constraints.typography;
+  return {
+    zoom,
+    nodeTitlePx: typography.nodeTitleMinPx * zoom,
+    nodeBodyPx: typography.nodeBodyMinPx * zoom,
+    edgeLabelPx: typography.edgeLabelMinPx * zoom,
+    uiMetadataPx: typography.uiMetadataMinPx,
+    detailTextPx: typography.detailTextMinPx,
+    minimumRequiredPx: typography.minimumEffectiveTextPx,
+    requiredCanvasZoom: Math.max(typography.minimumEffectiveTextPx / typography.nodeTitleMinPx, typography.minimumEffectiveTextPx / typography.nodeBodyMinPx, typography.minimumEffectiveTextPx / typography.edgeLabelMinPx)
+  };
+}
 function compilePhase(scene, phase, failures) {
   const authored = scene.change[phase];
   const nodes = authored.entityOrder.flatMap((id) => {
@@ -18264,7 +18435,8 @@ function compilePhase(scene, phase, failures) {
       continue;
     const horizontal = sourcePlacement.column !== targetPlacement.column;
     const available = horizontal ? scene.constraints.layout.columnGap : sourcePlacement.lane === targetPlacement.lane ? scene.constraints.layout.rowGap : scene.constraints.layout.laneGap;
-    const required3 = Math.max(scene.constraints.layout.minimumCorridor, horizontal ? estimateLabelWidth(relation.label) : 25);
+    const labelFontSize = scene.constraints.typography.edgeLabelMinPx * 1.5;
+    const required3 = Math.max(scene.constraints.layout.minimumCorridor, horizontal ? estimateLabelWidth(relation.label, labelFontSize) : estimateLabelHeight(relation.label, labelFontSize, scene.constraints.nodeSizing.minWidth));
     const directFits = available >= required3;
     const override = scene.presentation.edgeRouting.relations?.[id];
     const fallbacks = override?.fallback ?? scene.presentation.edgeRouting.fallback;
@@ -18303,7 +18475,11 @@ function compilePhase(scene, phase, failures) {
     label: authored.label,
     nodes,
     edges,
-    feasibility: { ...geometry, corridors }
+    feasibility: {
+      ...geometry,
+      effectiveTypography: effectiveTypography(scene, geometry.estimatedZoom),
+      corridors
+    }
   };
 }
 function compileScene(scene, failures) {
@@ -18326,17 +18502,49 @@ function compileInteractiveAuthoringDocument(raw) {
 - ${failures.join(`
 - `)}`);
   }
+  const warnings = document.scenes.flatMap((scene) => Object.entries(scene.semantics.entities).flatMap(([entityId, entity]) => ["role", "before", "after", "reason", "impact"].flatMap((dimension) => entity.details[dimension].identifiers.length === 0 ? [
+    `${scene.semanticId}/${entityId}/details/${dimension}: empty identifiers is an author assertion that no exact identifier applies`
+  ] : [])));
   return {
-    contractVersion: 1,
+    contractVersion: 2,
     direction: "left-to-right",
     source: document.source,
+    interaction: structuredClone(document.interaction),
     scenes,
+    warnings,
     measurementPolicy: {
       mode: "dom-final-correction",
       nodeAspectRatio: 1.5,
       sizing: "measure-content-then-clamp",
       edgeLabels: "route-after-node-measurement",
+      typography: "enforce-authored-and-effective-text-floors",
+      effectiveTextFormula: "nominal-css-px-times-transform-scale-times-font-scale",
+      remeasureOn: [
+        "fonts-ready",
+        "phase-change",
+        "detail-level-change",
+        "font-scale-change",
+        "container-resize"
+      ],
       exactPixelsGuaranteed: false
+    },
+    interactionPolicy: {
+      detailLevels: ["beginner", "intermediate", "expert"],
+      canonicalSourceAvailable: true,
+      fontScalePercent: { minimum: 100, maximum: 150 },
+      preserveAcrossControls: [
+        "node-and-edge-ids-and-order",
+        "topology",
+        "phase-state",
+        "canonical-source",
+        "identifiers",
+        "evidence-ids"
+      ],
+      accessibility: {
+        detailLevel: "radiogroup-with-arrow-key-navigation",
+        canonicalSource: "disclosure-with-aria-expanded",
+        fontScale: "range-with-live-output"
+      }
     }
   };
 }

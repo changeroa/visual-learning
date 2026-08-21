@@ -4,6 +4,11 @@ type RefinementContext = {
   addIssue(issue: { code: "custom"; path: PropertyKey[]; message: string }): void;
 };
 type PhaseName = "before" | "after";
+type DetailDimension = {
+  source: string;
+  identifiers: string[];
+  projections: { beginner: string; intermediate: string; expert: string };
+};
 
 function addIssue(context: RefinementContext, path: PropertyKey[], code: string, message: string) {
   context.addIssue({ code: "custom", path, message: `[${code}] ${message}` });
@@ -57,7 +62,7 @@ function checkCopy(
 }
 
 function checkFactEvidence(
-  claim: { status: string; evidence: readonly unknown[] },
+  claim: { status: string; evidence: readonly { id: string }[] },
   path: PropertyKey[],
   context: RefinementContext,
 ) {
@@ -67,6 +72,102 @@ function checkFactEvidence(
       [...path, "evidence"],
       "fact-evidence-required",
       "fact claims require evidence",
+    );
+  }
+}
+
+function checkUniqueEvidenceIds(
+  evidence: readonly { id: string }[],
+  path: PropertyKey[],
+  context: RefinementContext,
+) {
+  const ids = evidence.map((reference) => reference.id);
+  const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
+  if (duplicate !== undefined) {
+    addIssue(context, path, "duplicate-evidence-id", `evidence ID '${duplicate}' repeats`);
+  }
+}
+
+function checkDetailEvidence(
+  entity: { details: { evidenceIds: readonly string[] }; evidence: readonly { id: string }[] },
+  path: PropertyKey[],
+  context: RefinementContext,
+) {
+  const duplicate = entity.details.evidenceIds.find((id, index, ids) => ids.indexOf(id) !== index);
+  if (duplicate !== undefined) {
+    addIssue(
+      context,
+      [...path, "details", "evidenceIds"],
+      "duplicate-detail-evidence-id",
+      `detail evidence ID '${duplicate}' repeats`,
+    );
+  }
+  checkDetailEvidenceResolution(entity, path, [...path, "details", "evidenceIds"], context);
+}
+
+function checkDetailEvidenceResolution(
+  entity: { details: { evidenceIds: readonly string[] }; evidence: readonly { id: string }[] },
+  detailPath: PropertyKey[],
+  issuePath: PropertyKey[],
+  context: RefinementContext,
+) {
+  const available = new Set(entity.evidence.map((reference) => reference.id));
+  const unresolved = entity.details.evidenceIds.filter((id) => !available.has(id));
+  if (unresolved.length > 0) {
+    addIssue(
+      context,
+      issuePath,
+      "unresolved-detail-evidence-id",
+      `detail evidence IDs at ${detailPath.join(".")} must resolve against this entity evidence set: ${unresolved.join(",")}`,
+    );
+  }
+}
+
+function checkDetailDimension(
+  dimension: DetailDimension,
+  path: PropertyKey[],
+  context: RefinementContext,
+) {
+  const duplicate = dimension.identifiers.find(
+    (identifier, index, identifiers) => identifiers.indexOf(identifier) !== index,
+  );
+  if (duplicate !== undefined) {
+    addIssue(
+      context,
+      [...path, "identifiers"],
+      "duplicate-detail-identifier",
+      `identifier '${duplicate}' repeats`,
+    );
+  }
+  for (const identifier of dimension.identifiers) {
+    if (!dimension.source.includes(identifier)) {
+      addIssue(
+        context,
+        [...path, "source"],
+        "detail-identifier-not-in-source",
+        `canonical source must preserve identifier '${identifier}' exactly`,
+      );
+    }
+    for (const [level, projection] of Object.entries(dimension.projections)) {
+      if (!projection.includes(identifier)) {
+        addIssue(
+          context,
+          [...path, "projections", level],
+          "detail-identifier-not-preserved",
+          `${level} projection must preserve identifier '${identifier}' exactly`,
+        );
+      }
+    }
+  }
+  const beginnerLength = graphemeCount(dimension.projections.beginner);
+  const intermediateLength = graphemeCount(dimension.projections.intermediate);
+  const expertLength = graphemeCount(dimension.projections.expert);
+  if (beginnerLength < intermediateLength || intermediateLength < expertLength) {
+    addIssue(
+      context,
+      [...path, "projections"],
+      "detail-projection-order",
+      `projection lengths must satisfy beginner (${beginnerLength}) >= intermediate (${intermediateLength}) >= expert (${expertLength})`,
     );
   }
 }
@@ -144,19 +245,29 @@ function refinePhase(
       );
     }
     checkFactEvidence(relation, ["change", phaseName, "relations", relationId], context);
+    checkUniqueEvidenceIds(
+      relation.evidence,
+      ["change", phaseName, "relations", relationId, "evidence"],
+      context,
+    );
   }
   for (const entityId of entityIds) {
     const baseline = entities[entityId];
     if (baseline !== undefined) {
       const patch = phase.entities[entityId];
-      checkFactEvidence(
-        {
-          ...baseline,
-          ...patch,
-          status: patch?.status ?? baseline.status,
-          evidence: patch?.evidence ?? baseline.evidence,
-        },
-        ["change", phaseName, "entities", entityId],
+      const entity = {
+        ...baseline,
+        ...patch,
+        status: patch?.status ?? baseline.status,
+        evidence: patch?.evidence ?? baseline.evidence,
+      };
+      const path = ["change", phaseName, "entities", entityId];
+      checkFactEvidence(entity, path, context);
+      checkUniqueEvidenceIds(entity.evidence, [...path, "evidence"], context);
+      checkDetailEvidenceResolution(
+        entity,
+        ["semantics", "entities", entityId, "details", "evidenceIds"],
+        [...path, "evidence"],
         context,
       );
     }
@@ -184,6 +295,8 @@ export function refineInteractiveScene(scene: InteractiveSceneInput, context: Re
   );
   for (const [id, entity] of Object.entries(scene.semantics.entities)) {
     checkFactEvidence(entity, ["semantics", "entities", id], context);
+    checkUniqueEvidenceIds(entity.evidence, ["semantics", "entities", id, "evidence"], context);
+    checkDetailEvidence(entity, ["semantics", "entities", id], context);
   }
   for (const [id, relation] of Object.entries(scene.semantics.relations)) {
     if (
@@ -198,6 +311,7 @@ export function refineInteractiveScene(scene: InteractiveSceneInput, context: Re
       );
     }
     checkFactEvidence(relation, ["semantics", "relations", id], context);
+    checkUniqueEvidenceIds(relation.evidence, ["semantics", "relations", id, "evidence"], context);
   }
   refinePhase(scene, "before", context);
   refinePhase(scene, "after", context);
@@ -239,7 +353,7 @@ export function refineInteractiveScene(scene: InteractiveSceneInput, context: Re
     }
   }
 
-  const { copy, nodeSizing } = scene.constraints;
+  const { copy, nodeSizing, typography } = scene.constraints;
   if (nodeSizing.minWidth > nodeSizing.maxWidth) {
     addIssue(
       context,
@@ -247,6 +361,59 @@ export function refineInteractiveScene(scene: InteractiveSceneInput, context: Re
       "invalid-node-width-range",
       "minWidth must not exceed maxWidth",
     );
+  }
+  if (
+    copy.detailExpertMaxGraphemes > copy.detailIntermediateMaxGraphemes ||
+    copy.detailIntermediateMaxGraphemes > copy.detailBeginnerMaxGraphemes
+  ) {
+    addIssue(
+      context,
+      ["constraints", "copy"],
+      "invalid-projection-grapheme-budgets",
+      "detail grapheme budgets must satisfy expert <= intermediate <= beginner",
+    );
+  }
+  if (
+    copy.detailExpertMaxLines > copy.detailIntermediateMaxLines ||
+    copy.detailIntermediateMaxLines > copy.detailBeginnerMaxLines
+  ) {
+    addIssue(
+      context,
+      ["constraints", "copy"],
+      "invalid-projection-line-budgets",
+      "detail line budgets must satisfy expert <= intermediate <= beginner",
+    );
+  }
+  const minimumZoom = scene.constraints.layout.minimumZoom;
+  const transformedText = [
+    ["nodeTitleMinPx", typography.nodeTitleMinPx],
+    ["nodeBodyMinPx", typography.nodeBodyMinPx],
+    ["edgeLabelMinPx", typography.edgeLabelMinPx],
+  ] as const;
+  const untransformedText = [
+    ["uiMetadataMinPx", typography.uiMetadataMinPx],
+    ["detailTextMinPx", typography.detailTextMinPx],
+  ] as const;
+  for (const [field, nominalSize] of transformedText) {
+    const effectiveSize = nominalSize * minimumZoom;
+    if (effectiveSize < typography.minimumEffectiveTextPx) {
+      addIssue(
+        context,
+        ["constraints", "typography", field],
+        "effective-text-floor",
+        `${nominalSize}px at minimum zoom ${minimumZoom} becomes ${effectiveSize.toFixed(2)}px; require at least ${typography.minimumEffectiveTextPx}px`,
+      );
+    }
+  }
+  for (const [field, nominalSize] of untransformedText) {
+    if (nominalSize < typography.minimumEffectiveTextPx) {
+      addIssue(
+        context,
+        ["constraints", "typography", field],
+        "effective-text-floor",
+        `${nominalSize}px outside the transformed canvas must remain at least ${typography.minimumEffectiveTextPx}px`,
+      );
+    }
   }
   checkCopy(
     scene.story.question,
@@ -284,6 +451,48 @@ export function refineInteractiveScene(scene: InteractiveSceneInput, context: Re
       ["semantics", "entities", id, "description"],
       context,
     );
+    if (entity.badge !== undefined && entity.badge !== null) {
+      checkCopy(
+        entity.badge,
+        copy.badgeMaxGraphemes,
+        copy.badgeMaxLines,
+        ["semantics", "entities", id, "badge"],
+        context,
+      );
+    }
+    for (const field of ["role", "before", "after", "reason", "impact"] as const) {
+      const dimension = entity.details[field];
+      const path = ["semantics", "entities", id, "details", field];
+      checkDetailDimension(dimension, path, context);
+      checkCopy(
+        dimension.source,
+        copy.detailSourceMaxGraphemes,
+        copy.detailSourceMaxLines,
+        [...path, "source"],
+        context,
+      );
+      checkCopy(
+        dimension.projections.beginner,
+        copy.detailBeginnerMaxGraphemes,
+        copy.detailBeginnerMaxLines,
+        [...path, "projections", "beginner"],
+        context,
+      );
+      checkCopy(
+        dimension.projections.intermediate,
+        copy.detailIntermediateMaxGraphemes,
+        copy.detailIntermediateMaxLines,
+        [...path, "projections", "intermediate"],
+        context,
+      );
+      checkCopy(
+        dimension.projections.expert,
+        copy.detailExpertMaxGraphemes,
+        copy.detailExpertMaxLines,
+        [...path, "projections", "expert"],
+        context,
+      );
+    }
   }
   for (const [id, relation] of Object.entries(scene.semantics.relations)) {
     checkCopy(
@@ -310,6 +519,14 @@ export function refineInteractiveScene(scene: InteractiveSceneInput, context: Re
           copy.descriptionMaxGraphemes,
           copy.descriptionMaxLines,
           ["change", phaseName, "entities", id, "description"],
+          context,
+        );
+      if (patch.badge !== undefined && patch.badge !== null)
+        checkCopy(
+          patch.badge,
+          copy.badgeMaxGraphemes,
+          copy.badgeMaxLines,
+          ["change", phaseName, "entities", id, "badge"],
           context,
         );
     }

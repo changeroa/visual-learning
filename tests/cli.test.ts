@@ -82,9 +82,10 @@ describe("visual-note CLI", () => {
     expect(compiled.code).toBe(0);
     expect(JSON.parse(compiled.stdout)).toEqual(
       expect.objectContaining({
-        contractVersion: 1,
+        contractVersion: 2,
         measurementPolicy: expect.objectContaining({
           nodeAspectRatio: 1.5,
+          typography: "enforce-authored-and-effective-text-floors",
           exactPixelsGuaranteed: false,
         }),
       }),

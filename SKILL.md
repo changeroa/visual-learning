@@ -57,15 +57,18 @@ Use `presentation.frames` plus node-level `visual.category`, `visual.frameId`, `
 
 ## Interactive web authoring mode
 
-When the user requests a local interactive web page, React Flow, animated commit comparison, or a
-JSON contract that can be authored before rendering, read
+When the user requests a local interactive web page, React Flow, animated commit comparison, a JSON
+contract that can be authored before rendering, or improvements to interactive font readability,
+node detail, or explanation level, read
 [references/render-independent-authoring-contract.md](references/render-independent-authoring-contract.md).
 Keep this mode optional; the default Markdown/SVG/Excalidraw workflow remains authoritative for
 ordinary visual notes.
 
 Author meaning as stable baseline entities and relations plus ordered `before`/`after` patches. Add
-lanes, columns, copy budgets, 3:2 node-sizing constraints, and edge-label fallback policy, but never
-guess `x`/`y` coordinates. Emit the machine-readable schema and compile before opening a browser:
+lanes, columns, copy budgets, strict evidence-backed entity details, 3:2 node sizing, readable
+typography floors, accessible explanation/font controls, and edge-label fallback policy, but never
+guess `x`/`y` coordinates. These additions apply only to interactive web output. Emit the
+machine-readable schema and compile before opening a browser:
 
 ```sh
 "$SKILL/bin/visual-note" authoring-schema --json

@@ -1,6 +1,24 @@
 {
-  "contractVersion": 1,
+  "contractVersion": 2,
   "direction": "left-to-right",
+  "interaction": {
+    "detailLevel": {
+      "options": ["beginner", "intermediate", "expert"],
+      "default": "intermediate",
+      "accessibleLabel": "설명 난이도"
+    },
+    "canonicalSource": {
+      "available": true,
+      "accessibleLabel": "근거가 된 원문 설명 보기"
+    },
+    "fontScale": {
+      "minimumPercent": 100,
+      "maximumPercent": 150,
+      "defaultPercent": 100,
+      "stepPercent": 5,
+      "accessibleLabel": "글자 크기"
+    }
+  },
   "source": {
     "root": "/tmp/visual-learning-source",
     "before": { "commit": "6d00d4a", "label": "commit absent" },
@@ -21,40 +39,243 @@
           "commit-source": {
             "title": "Source revision",
             "description": "선택한 commit이 비교할 runtime surface를 결정한다.",
+            "details": {
+              "role": {
+                "source": "source commit은 비교할 라우팅과 실행 경계를 선택하는 기준 revision이다.",
+                "identifiers": ["source commit"],
+                "projections": {
+                  "beginner": "source commit은 어떤 버전의 실행 경계를 화면에 보여 줄지 정하는 출발점이며 이후 동작의 기준이다.",
+                  "intermediate": "source commit은 비교할 router와 runtime authority surface를 선택한다.",
+                  "expert": "source commit이 runtime boundary를 선택한다."
+                }
+              },
+              "before": {
+                "source": "commit 부재 상태에서는 public transition을 브라우저가 직접 호출한다.",
+                "identifiers": ["public transition"],
+                "projections": {
+                  "beginner": "commit이 없을 때는 브라우저가 public transition을 직접 불러 실행 상태를 바꾼다.",
+                  "intermediate": "commit 부재 시 브라우저가 public transition surface를 직접 사용한다.",
+                  "expert": "브라우저가 public transition을 호출한다."
+                }
+              },
+              "after": {
+                "source": "commit 존재 상태에서는 internal daemon endpoint가 실행 경계를 제공한다.",
+                "identifiers": ["internal daemon endpoint"],
+                "projections": {
+                  "beginner": "commit이 있으면 브라우저 대신 internal daemon endpoint가 실행 상태 변경을 맡고 내부에서 안전하게 처리한다.",
+                  "intermediate": "commit 존재 시 internal daemon endpoint가 transition boundary를 제공한다.",
+                  "expert": "internal daemon endpoint가 transition을 소유한다."
+                }
+              },
+              "reason": {
+                "source": "두 revision의 router 구성이 서로 다른 authority surface를 노출한다.",
+                "identifiers": ["router"],
+                "projections": {
+                  "beginner": "두 버전의 router 연결 방식이 달라서 실행 요청을 받는 주체와 처리 경로도 함께 달라진다.",
+                  "intermediate": "revision별 router 구성이 서로 다른 authority surface를 노출한다.",
+                  "expert": "router 구성이 authority를 분기한다."
+                }
+              },
+              "impact": {
+                "source": "선택한 revision에 따라 호출 가능한 endpoint와 실행 책임이 달라진다.",
+                "identifiers": ["endpoint"],
+                "projections": {
+                  "beginner": "선택한 버전에 따라 브라우저가 사용할 수 있는 endpoint와 실행 담당자가 달라진다.",
+                  "intermediate": "revision 선택이 노출 endpoint와 transition 책임을 함께 바꾼다.",
+                  "expert": "endpoint와 authority가 함께 바뀐다."
+                }
+              },
+              "evidenceIds": ["commit-router"]
+            },
             "badge": "GIT",
             "changeStatus": "normal",
             "visual": { "category": "neutral", "shape": "rectangle" },
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/src/router.ts", "symbol": "router" }]
+            "evidence": [
+              { "id": "commit-router", "path": "worker/src/router.ts", "symbol": "router" }
+            ]
           },
           "browser-executor": {
             "title": "Browser transitions",
             "description": "claim, complete, resume 요청을 보내던 public executor surface다.",
+            "details": {
+              "role": {
+                "source": "public executor는 사용자 요청을 generation transition 호출로 연결한다.",
+                "identifiers": ["public executor"],
+                "projections": {
+                  "beginner": "public executor는 화면의 사용자 행동을 서버의 실행 상태 변경 요청으로 바꾸고 그 요청을 직접 전달한다.",
+                  "intermediate": "public executor는 사용자 요청을 generation transition API로 연결한다.",
+                  "expert": "public executor가 transition을 중계한다."
+                }
+              },
+              "before": {
+                "source": "브라우저가 claim, complete, resume transition을 직접 요청한다.",
+                "identifiers": ["claim"],
+                "projections": {
+                  "beginner": "브라우저가 작업을 가져오는 claim부터 완료와 재개까지 각 실행 단계를 직접 서버에 요청한다.",
+                  "intermediate": "브라우저가 claim, complete, resume transition을 직접 호출한다.",
+                  "expert": "브라우저가 claim을 직접 호출한다."
+                }
+              },
+              "after": {
+                "source": "브라우저는 create와 cancel admission만 담당하고 transition은 요청하지 않는다.",
+                "identifiers": ["create"],
+                "projections": {
+                  "beginner": "브라우저는 새 작업을 만드는 create와 취소만 보내고 실행 단계 변경과 내부 처리는 더 이상 맡지 않는다.",
+                  "intermediate": "브라우저는 create와 cancel admission만 유지하고 transition 권한을 제거한다.",
+                  "expert": "브라우저는 create admission만 소유한다."
+                }
+              },
+              "reason": {
+                "source": "실행 권한을 bearer-protected daemon boundary로 이동해 public surface를 줄였다.",
+                "identifiers": ["daemon boundary"],
+                "projections": {
+                  "beginner": "중요한 실행 변경을 보호된 daemon boundary 안으로 옮겨 외부 노출을 줄이고 인증된 요청만 받는다.",
+                  "intermediate": "transition authority를 bearer-protected daemon boundary로 이동한다.",
+                  "expert": "daemon boundary가 authority를 격리한다."
+                }
+              },
+              "impact": {
+                "source": "클라이언트의 transition 책임과 노출 API가 줄어든다.",
+                "identifiers": ["transition"],
+                "projections": {
+                  "beginner": "브라우저가 처리하던 transition 책임이 줄고 실행 오류는 daemon이 다룬다.",
+                  "intermediate": "클라이언트의 transition 책임과 public API surface가 축소된다.",
+                  "expert": "transition 책임이 daemon으로 이동한다."
+                }
+              },
+              "evidenceIds": ["browser-generation-api"]
+            },
             "changeStatus": "removed",
             "visual": { "category": "runtime", "shape": "rectangle" },
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/src/modules/generation/api.ts" }]
+            "evidence": [
+              { "id": "browser-generation-api", "path": "worker/src/modules/generation/api.ts" }
+            ]
           },
           "daemon-authority": {
             "title": "Internal daemon authority",
             "description": "bearer-protected internal endpoint가 transition을 소유한다.",
+            "details": {
+              "role": {
+                "source": "daemon authority는 generation 실행 transition을 소유하는 내부 권한 경계다.",
+                "identifiers": ["daemon authority"],
+                "projections": {
+                  "beginner": "daemon authority는 보호된 내부 실행 담당자로서 상태 변경을 한곳에서 맡고 실행 권한을 관리한다.",
+                  "intermediate": "daemon authority는 인증된 generation transition boundary다.",
+                  "expert": "daemon authority가 transition을 소유한다."
+                }
+              },
+              "before": {
+                "source": "daemon authority가 없어 public executor가 transition을 수행한다.",
+                "identifiers": ["public executor"],
+                "projections": {
+                  "beginner": "내부 실행 담당자가 없어서 브라우저의 public executor가 상태 변경을 수행한다.",
+                  "intermediate": "daemon 부재 시 public executor가 transition을 직접 수행한다.",
+                  "expert": "public executor가 authority를 가진다."
+                }
+              },
+              "after": {
+                "source": "bearer-protected internal endpoint가 claim, complete, resume을 수행한다.",
+                "identifiers": ["internal endpoint"],
+                "projections": {
+                  "beginner": "토큰으로 보호된 internal endpoint가 작업 가져오기부터 완료와 재개까지 모든 실행 단계를 직접 안전하게 처리한다.",
+                  "intermediate": "bearer-protected internal endpoint가 claim, complete, resume을 수행한다.",
+                  "expert": "internal endpoint가 transition을 실행한다."
+                }
+              },
+              "reason": {
+                "source": "transition ownership을 인증된 하나의 내부 경계로 모은다.",
+                "identifiers": ["transition ownership"],
+                "projections": {
+                  "beginner": "실행 상태를 바꿀 권한인 transition ownership을 보호된 한곳에서 관리해 책임 주체를 분명하게 한다.",
+                  "intermediate": "인증과 transition ownership을 internal daemon boundary에 결합한다.",
+                  "expert": "transition ownership을 내부화한다."
+                }
+              },
+              "impact": {
+                "source": "daemon token 검증이 모든 실행 transition의 필수 경로가 된다.",
+                "identifiers": ["daemon token"],
+                "projections": {
+                  "beginner": "실행 상태를 바꾸려면 항상 daemon token이 확인되어야 하고 토큰이 없으면 변경할 수 없다.",
+                  "intermediate": "모든 execution transition이 daemon token 검증을 통과한다.",
+                  "expert": "daemon token이 transition을 보호한다."
+                }
+              },
+              "evidenceIds": ["daemon-generation-api"]
+            },
             "badge": "TOKEN",
             "changeStatus": "added",
             "visual": { "category": "security", "shape": "diamond" },
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/src/modules/generation/daemon-api.ts" }]
+            "evidence": [
+              {
+                "id": "daemon-generation-api",
+                "path": "worker/src/modules/generation/daemon-api.ts"
+              }
+            ]
           },
           "test-proof": {
             "title": "Boundary regression",
             "description": "public transition은 404이고 daemon path만 남는 사실을 고정한다.",
+            "details": {
+              "role": {
+                "source": "regression test는 public과 internal 권한 경계를 검증한다.",
+                "identifiers": ["regression test"],
+                "projections": {
+                  "beginner": "regression test는 보호 경계가 예전처럼 약해지지 않았는지 계속 확인하고 잘못 열리면 실패한다.",
+                  "intermediate": "regression test는 public denial과 internal success를 함께 검증한다.",
+                  "expert": "regression test가 boundary를 고정한다."
+                }
+              },
+              "before": {
+                "source": "public transition 부재를 고정하는 검증이 충분하지 않다.",
+                "identifiers": ["public transition"],
+                "projections": {
+                  "beginner": "외부에서 public transition을 다시 사용할 수 없는지 확인하는 테스트가 부족하다.",
+                  "intermediate": "public transition 제거를 명시적으로 고정하지 못한다.",
+                  "expert": "public transition denial이 미고정이다."
+                }
+              },
+              "after": {
+                "source": "public path의 404와 daemon path의 성공을 함께 검증한다.",
+                "identifiers": ["404"],
+                "projections": {
+                  "beginner": "외부 실행 주소는 404가 되고 보호된 daemon 주소만 성공하는지 두 경로를 테스트에서 함께 확인한다.",
+                  "intermediate": "public transition은 404, daemon transition은 성공하도록 검증한다.",
+                  "expert": "public 404를 고정한다."
+                }
+              },
+              "reason": {
+                "source": "routing change만으로는 이후 public endpoint 재노출을 막을 수 없다.",
+                "identifiers": ["routing change"],
+                "projections": {
+                  "beginner": "코드의 routing change만 믿으면 나중에 외부 주소가 실수로 다시 열릴 수 있다.",
+                  "intermediate": "routing change는 public endpoint 재노출을 스스로 방지하지 못한다.",
+                  "expert": "routing change에는 회귀 증거가 필요하다."
+                }
+              },
+              "impact": {
+                "source": "security regression이 발생하면 테스트가 즉시 실패한다.",
+                "identifiers": ["security regression"],
+                "projections": {
+                  "beginner": "권한 경계가 다시 약해지는 security regression을 테스트 실패로 바로 발견한다.",
+                  "intermediate": "boundary 위반을 security regression 실패로 즉시 노출한다.",
+                  "expert": "security regression을 즉시 탐지한다."
+                }
+              },
+              "evidenceIds": ["lifecycle-boundary-test"]
+            },
             "changeStatus": "changed",
             "visual": { "category": "data", "shape": "rectangle" },
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/test/content-lifecycle.test.ts" }]
+            "evidence": [
+              { "id": "lifecycle-boundary-test", "path": "worker/test/content-lifecycle.test.ts" }
+            ]
           }
         },
         "relations": {
@@ -66,7 +287,7 @@
             "animated": false,
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/src/router.ts" }]
+            "evidence": [{ "id": "source-browser-router", "path": "worker/src/router.ts" }]
           },
           "source-daemon": {
             "from": "commit-source",
@@ -76,7 +297,7 @@
             "animated": true,
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/src/router.ts" }]
+            "evidence": [{ "id": "source-daemon-router", "path": "worker/src/router.ts" }]
           },
           "daemon-browser": {
             "from": "daemon-authority",
@@ -86,7 +307,9 @@
             "animated": true,
             "status": "inference",
             "confidence": "high",
-            "evidence": [{ "path": "worker/src/modules/generation/daemon-api.ts" }]
+            "evidence": [
+              { "id": "daemon-browser-api", "path": "worker/src/modules/generation/daemon-api.ts" }
+            ]
           },
           "executor-tests": {
             "from": "browser-executor",
@@ -96,7 +319,9 @@
             "animated": false,
             "status": "fact",
             "confidence": "high",
-            "evidence": [{ "path": "worker/test/content-lifecycle.test.ts" }]
+            "evidence": [
+              { "id": "executor-regression-test", "path": "worker/test/content-lifecycle.test.ts" }
+            ]
           }
         }
       },
@@ -210,13 +435,31 @@
           "storyTakeawayMaxGraphemes": 90,
           "titleMaxGraphemes": 48,
           "descriptionMaxGraphemes": 100,
+          "badgeMaxGraphemes": 16,
           "edgeLabelMaxGraphemes": 36,
+          "detailSourceMaxGraphemes": 140,
+          "detailBeginnerMaxGraphemes": 140,
+          "detailIntermediateMaxGraphemes": 120,
+          "detailExpertMaxGraphemes": 80,
           "storyQuestionMaxLines": 2,
           "storySummaryMaxLines": 2,
           "storyTakeawayMaxLines": 2,
           "titleMaxLines": 2,
           "descriptionMaxLines": 3,
-          "edgeLabelMaxLines": 2
+          "badgeMaxLines": 1,
+          "edgeLabelMaxLines": 2,
+          "detailSourceMaxLines": 3,
+          "detailBeginnerMaxLines": 3,
+          "detailIntermediateMaxLines": 3,
+          "detailExpertMaxLines": 2
+        },
+        "typography": {
+          "nodeTitleMinPx": 24,
+          "nodeBodyMinPx": 20,
+          "edgeLabelMinPx": 20,
+          "uiMetadataMinPx": 20,
+          "detailTextMinPx": 20,
+          "minimumEffectiveTextPx": 14
         }
       }
     }
