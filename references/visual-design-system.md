@@ -2,7 +2,9 @@
 
 ## Series contract
 
-Use one canvas to answer one question. For a whole repository, create five or six linked views:
+Use one canvas to answer one question. Select the smallest linked series that covers the user's
+questions. For a whole repository, the following views are a starting menu. For DB/API explanations,
+choose the reading path from [db-api-information-design.md](db-api-information-design.md) first:
 
 | View | Layout | Question |
 | --- | --- | --- |
@@ -12,7 +14,9 @@ Use one canvas to answer one question. For a whole repository, create five or si
 | Trust boundary | `trust-boundary` | Where do identity, authority, and credentials cross boundaries? |
 | Component views | `components` | Which code modules collaborate inside each major runtime? |
 
-Keep overview views to roughly 4–8 nodes. Split denser content into related component views.
+Aim for roughly 4–8 primary nodes in an overview as a local design heuristic, not a universal limit.
+Split denser content into linked detail views while retaining full requested coverage. Do not start a
+DB explainer with every collection, field, index, and endpoint on one canvas.
 
 ## Portable series structure
 
@@ -48,6 +52,13 @@ Use `ellipse` for people/external actors, `diamond` for decisions or barriers, a
 - Place frames before nodes so their low-opacity backgrounds remain behind content.
 - Route the normal path through the main lane. Put failure and `publishing_uncertain` states in the exception lane.
 - Prefer short edge labels describing protocol or responsibility. Move detailed explanation into companion notes.
+- Declare what each view's edges mean: static reference, runtime call, data movement, or state
+  transition. Label the direction with a verb or exact field pair; do not use one ambiguous arrow
+  style for all four meanings. Keep any certainty styling independent from this relationship legend.
+- Distinguish an embedded object from a separate referenced document. Use a labelled containment
+  frame when representable; otherwise show the exact nested field path in the companion note.
+- Keep selection and filtering spatially stable. Re-layout only when geometry actually changes,
+  preserve focus across linked views, and use explicit labels as well as category colors.
 - Connect at shape boundaries rather than center-to-center.
 - Arrange modules horizontally inside single-runtime component frames; reserve vertical stacking for
   genuine call depth rather than for simple membership.

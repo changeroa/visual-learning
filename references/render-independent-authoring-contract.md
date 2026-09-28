@@ -4,6 +4,17 @@ Use this mode when the requested artifact is a local interactive web view, a Rea
 before/after commit animation. The authoring JSON describes meaning, change, ordering, and spatial
 constraints. It never guesses browser coordinates.
 
+For DB/API learning views, first select the question, abstraction level, and evidence using
+[db-api-information-design.md](db-api-information-design.md). That guide's inspector contents,
+scenario navigation, and CRUD matrix are presentation guidance, not extra properties of this strict
+JSON contract. The v2 `details` object remains exactly the six dimensions documented below.
+
+This contract models Git revision comparisons, not arbitrary proposed futures. A current-state
+explainer can use identical phases at the same real commit when appropriate; it must not fabricate
+commits or differences. Use the regular linked-view workflow if comparison dossiers do not fit the
+task. Treat scenario selection as a change of focus, not as a before/after code change. A proposed
+architecture without a real implementation revision belongs in a separately labelled proposal view.
+
 The canonical example is contract version 2 at
 [`tests/fixtures/interactive-authoring.json`](../tests/fixtures/interactive-authoring.json). Emit the
 machine-readable Draft 2020-12 shape with:

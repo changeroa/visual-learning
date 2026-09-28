@@ -1,6 +1,6 @@
 ---
 name: visual-learning
-description: Create, export, refresh, validate, open, or restore evidence-backed engineering maps as linked Markdown, polished SVG, Excalidraw notes, or renderer-independent JSON for local interactive web views. Use for whole-repository architecture series, project maps, commit before/after animations, React Flow maps, C4 views, ADR tradeoffs, API journeys, workflows, sequences, data flows, trust boundaries, code exploration, call maps, or Korean visual study notes that preserve exact English identifiers and human annotations.
+description: Create, export, refresh, validate, open, or restore evidence-backed engineering maps as linked Markdown, SVG, Excalidraw notes, or renderer-independent JSON for local interactive web views. Use to explain codebase architecture, DB schemas and collection relationships, API-to-data journeys, state transitions, workflows, data lineage, ADR tradeoffs, trust boundaries, call maps, or commit comparisons. Organize explanations around reader questions while preserving exact identifiers and human annotations.
 ---
 
 # Visual Learning
@@ -41,11 +41,29 @@ Keep code/API/type/function identifiers exactly in English (`CheckoutService`, `
 
 Supported `kind` values are exactly: `project-map`, `system-architecture`, `container-architecture`, `component-architecture`, `adr`, `api-contract`, `workflow`, `data-flow`, `trust-boundary`, and `code-exploration`.
 
+## DB and API information design
+
+When explaining database structure, API behavior, or why an existing technical explainer is hard to
+understand, read [references/db-api-information-design.md](references/db-api-information-design.md)
+before selecting views. It covers question-to-figure selection, document containment versus
+references, verified API reads/writes, linked exploration, and comprehension review.
+
+For broad DB/API learning requests, organize the reading path as **system overview → one user
+scenario → API calls and data changes → document relationships → field details**. Adapt this path
+to the user's question; a request for one relationship or one endpoint does not require a full series.
+Keep a field dictionary available as a lookup layer, not the default explanation of a whole system.
+
+Use the existing `kind` values and renderer contracts. ERDs, state diagrams, and CRUD matrices are
+explanation forms, not new accepted JSON enums. Preserve uncertainty about call edges, writes,
+cardinality, and transactions: a matching symbol or valid schema alone does not prove behavior.
+
 ## Visual design system
 
 For polished architecture series, read [references/visual-design-system.md](references/visual-design-system.md). Keep evidence status separate from presentation category: `status` communicates certainty, while `visual.category` controls color and grouping.
 
-When the user asks to visualize an entire repository, prefer a linked series instead of one dense canvas:
+When the user asks to visualize an entire repository, prefer a linked series instead of one dense
+canvas. The following is a starting menu; select views that answer the request rather than creating
+every view automatically. For DB/API learning, use the question-led sequence above:
 
 1. `system-architecture` with `frames` for major execution boundaries.
 2. `workflow` with `timeline` and a separate `exception` lane.
@@ -63,6 +81,12 @@ node detail, or explanation level, read
 [references/render-independent-authoring-contract.md](references/render-independent-authoring-contract.md).
 Keep this mode optional; the default Markdown/SVG/Excalidraw workflow remains authoritative for
 ordinary visual notes.
+
+The current interactive contract describes Git before/after comparisons. For a current-state
+explainer, author identical phases at one real revision only when that representation fits; do not
+invent a change, revision, or new schema field to obtain an interactive diagram. Use regular linked
+views when the comparison contract does not fit. DB/API explorer behavior in the information-design
+guide is authoring guidance, not a claim that a ready-made web renderer is bundled here.
 
 Author meaning as stable baseline entities and relations plus ordered `before`/`after` patches. Add
 lanes, columns, copy budgets, strict evidence-backed entity details, 3:2 node sizing, readable
