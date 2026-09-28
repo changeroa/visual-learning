@@ -1,16 +1,19 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanup } from "../scripts/qa/renderer-live-support";
 
 const cli = join(import.meta.dir, "../bin/visual-note");
-const canonicalPluginData =
-  "/Users/billionjaepyo/Documents/Obsidian Vault/.obsidian/plugins/obsidian-excalidraw-plugin/data.json";
+const canonicalPluginData = join(
+  homedir(),
+  "Documents/Obsidian Vault/.obsidian/plugins/obsidian-excalidraw-plugin/data.json",
+);
 
-function hash(path: string): string {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+// An absent canonical file must stay absent, so drift is still detected on machines without it.
+function hash(path: string): string | null {
+  return existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : null;
 }
 
 test("isolated cleanup rejects an unowned process without drifting canonical settings", async () => {

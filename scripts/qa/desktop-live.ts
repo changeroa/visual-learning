@@ -8,6 +8,7 @@ import {
   renameSync,
   writeSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { z } from "zod";
 import { ConflictError, RuntimeError } from "../../src/errors";
@@ -25,8 +26,10 @@ import {
   shutdownDefault,
 } from "./renderer-production-support";
 
-export const PLUGIN_DATA =
-  "/Users/billionjaepyo/Documents/Obsidian Vault/.obsidian/plugins/obsidian-excalidraw-plugin/data.json";
+export const PLUGIN_DATA = join(
+  homedir(),
+  "Documents/Obsidian Vault/.obsidian/plugins/obsidian-excalidraw-plugin/data.json",
+);
 const PLUGIN_SHA = "0f8578ba59eb6f323d27e566af324e92375ef98c0ded96aa55b3dd260be45d25";
 
 export function pgrepAny(): boolean {

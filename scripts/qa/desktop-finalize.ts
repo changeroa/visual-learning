@@ -1,4 +1,5 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { RuntimeError } from "../../src/errors";
 import { ARTIFACT, type JourneyContext, log, must } from "./desktop-journey";
@@ -24,13 +25,13 @@ export function finalizeEvidence(ctx: JourneyContext, appLog: string, pluginBefo
       "--config",
       join(ctx.evidence, "task-1-approved-targets.json"),
       "--protected",
-      "/Users/billionjaepyo/.zprofile",
+      join(homedir(), ".zprofile"),
       "--protected",
-      "/Users/billionjaepyo/.zshrc",
+      join(homedir(), ".zshrc"),
       "--vault",
       ctx.vault,
       "--readonly-vault",
-      "/Users/billionjaepyo/Documents/Documents - victor’s MacBook Pro/Obsidian Vault",
+      join(homedir(), "Documents/Documents - victor’s MacBook Pro/Obsidian Vault"),
       "--out",
       join(ctx.evidence, "task-12-final-manifest.json"),
       "--verify-repeat",
