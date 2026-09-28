@@ -77,6 +77,24 @@ function sceneSize(view: GeneratedView): { readonly width: number; readonly heig
   };
 }
 
+function routeBadges(view: GeneratedView, originX: number, originY: number): string {
+  const route = view.spec.learning?.route ?? [];
+  const shapes = new Map(
+    planScene(view.spec)
+      .elements.filter((element) => element.role === "node-shape")
+      .map((element) => [element.semanticId, element]),
+  );
+  return route
+    .map((step, index) => {
+      const shape = shapes.get(step.semanticId);
+      if (shape === undefined) return "";
+      const cx = originX + shape.x + 4;
+      const cy = originY + CAPTION_HEIGHT + shape.y + 4;
+      return `<g data-route-step="${index + 1}"><circle cx="${cx}" cy="${cy}" r="15" fill="#0f172a" stroke="#ffffff" stroke-width="3"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="14" font-weight="700" fill="#ffffff">${index + 1}</text></g>`;
+    })
+    .join("");
+}
+
 function renderCard(view: GeneratedView, originX: number, originY: number): string {
   const plan = planScene(view.spec);
   const styles = styleMap(view.styles);
@@ -146,6 +164,7 @@ function renderCard(view: GeneratedView, originX: number, originY: number): stri
       `<text x="${textX}" y="${textY}" text-anchor="${centered ? "middle" : "start"}" font-family="Virgil, 'Comic Sans MS', ui-rounded, sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${palette.text}">${textLines(element.text, textX, fontSize, palette.text)}</text>`,
     );
   }
+  pieces.push(routeBadges(view, originX, originY));
   return pieces.join("");
 }
 

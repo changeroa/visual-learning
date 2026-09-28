@@ -14,6 +14,7 @@ import { InputError } from "./errors";
 import { resolveEvidence } from "./evidence-resolver";
 import { encodeSceneToMarkdown } from "./excalidraw-file";
 import { jsonBytes, sha256 } from "./io";
+import { learningHeader, learningIndexLines, learningSections } from "./learning-note";
 import { publishProjectDirectory } from "./project-publish";
 import { sceneFromSpec } from "./scene-bootstrap";
 import { parseVisualNoteSpec, type VisualNoteSpec } from "./schema";
@@ -142,14 +143,15 @@ revision: ${spec.revision}
 
 ${navigation}
 
-![${spec.title}](./${spec.artifactId}.svg)
+${learningHeader(spec)}![${spec.title}](./${spec.artifactId}.svg)
 
 [Excalidraw 원본](./${spec.artifactId}.excalidraw.md) · [검증 스펙](./specs/${spec.artifactId}.json)
 
 - Source: \`${spec.source.root}\`
 - Commit: \`${spec.source.commit ?? "uncommitted"}\`
+- Spec revision: ${spec.revision} · validated by \`visual-note\` schema at export
 
-## Evidence status
+${learningSections(spec)}## Evidence status
 
 ${evidenceText(spec)}
 `;
@@ -160,7 +162,7 @@ function indexFor(project: string, specs: readonly VisualNoteSpec[]): string {
     .map(
       (spec, index) => `## ${index + 1}. ${spec.title}
 
-[상세 노트 열기](./${spec.artifactId}.md)
+${learningIndexLines(spec)}[상세 노트 열기](./${spec.artifactId}.md)
 
 ![${spec.title}](./${spec.artifactId}.svg)`,
     )

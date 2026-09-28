@@ -33,6 +33,7 @@ describe("visual-note CLI", () => {
       "validate",
       "authoring-schema",
       "compile-authoring",
+      "review-learning",
       "open",
       "restore",
       "contract",
@@ -71,6 +72,35 @@ describe("visual-note CLI", () => {
     // Then
     expect(accepted.code).toBe(0);
     expect(rejected.code).toBe(2);
+  });
+
+  test("review-learning reports research-rule findings and rejects a dangling route", () => {
+    // Given
+    const learning = join(import.meta.dir, "fixtures/learning/checkout-journey.json");
+    const legacy = join(import.meta.dir, "fixtures/architecture.json");
+    const dangling = join(import.meta.dir, "fixtures/learning/invalid-route.json");
+    // When
+    const reviewed = run(["review-learning", "--spec", learning, "--json"]);
+    const bare = run(["review-learning", "--spec", legacy, "--json"]);
+    const rejected = run(["review-learning", "--spec", dangling, "--json"]);
+    // Then
+    expect(reviewed.code).toBe(0);
+    const review = JSON.parse(reviewed.stdout) as {
+      hasLearningLayer: boolean;
+      counts: { warn: number };
+      findings: { rule: string; target: string | null }[];
+    };
+    expect(review.hasLearningLayer).toBe(true);
+    expect(review.counts.warn).toBe(0);
+    expect(review.findings.map((finding) => finding.target)).toContain("checkout-service");
+    expect(bare.code).toBe(0);
+    const bareRules = (JSON.parse(bare.stdout) as { findings: { rule: string }[] }).findings.map(
+      (finding) => finding.rule,
+    );
+    expect(bareRules).toContain("LR01-question");
+    expect(bareRules).toContain("LR02-edge-relation");
+    expect(rejected.code).toBe(2);
+    expect(rejected.stderr).toContain("unknown semantic ID missing-node");
   });
 
   test("emits and compiles the render-independent interactive authoring contract", () => {
