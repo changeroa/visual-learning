@@ -67,7 +67,7 @@ function scopeRule(spec: VisualNoteSpec): Finding[] {
         : "list what this view deliberately leaves out",
       basis: trustBoundary
         ? "SUPPORTED (debate D-16): DFD is a scoped view, not a complete threat model"
-        : "STRONG: explicit scope and omissions (research reference R4)",
+        : "STRONG as documentation practice (research reference R4); trust-calibration effect UNRESOLVED (debate E-11)",
     },
   ];
 }

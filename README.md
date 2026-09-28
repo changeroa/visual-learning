@@ -55,6 +55,11 @@ VAULT="/path/to/Obsidian Vault"
 
 Supported `kind`s: `project-map`, `system-architecture`, `container-architecture`, `component-architecture`, `adr`, `api-contract`, `workflow`, `data-flow`, `trust-boundary`, `code-exploration`. Dense inputs split into linked views instead of unreadable canvases.
 
+Specs may add a `learning` block (question and answer, numbered reading route with per-element
+explanations, glossary, scope with omissions, verify steps, folded self-checks, bounded analogies)
+and an edge `relation`. `visual-note review-learning --spec spec.json --json` checks a spec against
+the research-backed rules in [references/learning-figure-research.md](references/learning-figure-research.md).
+
 ## DB and API learning
 
 Example requests:
