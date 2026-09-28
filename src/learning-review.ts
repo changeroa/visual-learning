@@ -116,7 +116,7 @@ function widthRule(spec: VisualNoteSpec): Finding[] {
       rule: "LR07-figure-width",
       severity: "warn",
       target: null,
-      message: `the planned figure is ${Math.round(width)}px wide and will shrink below readable text size at note width; group nodes into presentation frames with the components or frames layout, or split the view`,
+      message: `the planned figure is ${Math.round(width)}px wide and will shrink below readable text size at note width; group nodes into presentation frames with the components layout (presentation.columns: 2 keeps it narrow), or split the view`,
       basis:
         "MODERATE: check the smallest rendered text at the intended viewing scale (research reference R10); learner profile T-5/T-10 readability",
     },

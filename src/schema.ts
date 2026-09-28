@@ -51,6 +51,7 @@ export const presentationSchema = z
   .object({
     layout: z.enum(["layered", "frames", "timeline", "hub", "trust-boundary", "components"]),
     direction: z.literal("left-to-right").default("left-to-right"),
+    columns: z.number().int().min(1).max(3).optional(),
     frames: z
       .array(
         z

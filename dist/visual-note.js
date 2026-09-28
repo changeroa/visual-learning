@@ -5239,6 +5239,7 @@ var nodeVisualSchema = object({
 var presentationSchema = object({
   layout: _enum(["layered", "frames", "timeline", "hub", "trust-boundary", "components"]),
   direction: literal("left-to-right").default("left-to-right"),
+  columns: number2().int().min(1).max(3).optional(),
   frames: array(object({
     id: frameIdSchema,
     label: string2().trim().min(1),
@@ -6146,7 +6147,7 @@ function componentPlacements(spec) {
   let y = 140;
   for (const frame of frames) {
     const members = orderedNodes(spec).filter((node) => node.visual?.frameId === frame.id);
-    const columns = Math.max(1, Math.min(3, members.length));
+    const columns = Math.max(1, Math.min(spec.presentation?.columns ?? 3, members.length));
     const rows = Math.max(1, Math.ceil(members.length / columns));
     const width = 80 + columns * NODE_WIDTH + (columns - 1) * 60;
     const height = Math.max(310, 110 + rows * ROW_STEP);
@@ -9423,7 +9424,7 @@ function widthRule(spec) {
       rule: "LR07-figure-width",
       severity: "warn",
       target: null,
-      message: `the planned figure is ${Math.round(width)}px wide and will shrink below readable text size at note width; group nodes into presentation frames with the components or frames layout, or split the view`,
+      message: `the planned figure is ${Math.round(width)}px wide and will shrink below readable text size at note width; group nodes into presentation frames with the components layout (presentation.columns: 2 keeps it narrow), or split the view`,
       basis: "MODERATE: check the smallest rendered text at the intended viewing scale (research reference R10); learner profile T-5/T-10 readability"
     }
   ];
