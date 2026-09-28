@@ -9,9 +9,28 @@
     "commit": null
   },
   "presentation": {
-    "layout": "timeline",
+    "layout": "components",
     "direction": "left-to-right",
-    "frames": []
+    "frames": [
+      {
+        "id": "request",
+        "label": "요청 처리",
+        "category": "runtime",
+        "order": 0
+      },
+      {
+        "id": "store",
+        "label": "저장",
+        "category": "data",
+        "order": 1
+      },
+      {
+        "id": "async",
+        "label": "비동기 이행",
+        "category": "neutral",
+        "order": 2
+      }
+    ]
   },
   "learning": {
     "question": "POST /orders 요청 하나가 어떤 코드를 거쳐 어디에 기록되고, 언제 비동기로 넘어가는가?",
@@ -114,7 +133,8 @@
         "shape": "rectangle",
         "lane": "main",
         "order": 0,
-        "emphasis": "primary"
+        "emphasis": "primary",
+        "frameId": "request"
       }
     },
     {
@@ -132,7 +152,8 @@
         "shape": "rectangle",
         "lane": "main",
         "order": 1,
-        "emphasis": "primary"
+        "emphasis": "primary",
+        "frameId": "request"
       }
     },
     {
@@ -149,7 +170,8 @@
         "category": "data",
         "shape": "rectangle",
         "lane": "main",
-        "order": 2
+        "order": 2,
+        "frameId": "store"
       }
     },
     {
@@ -167,7 +189,8 @@
         "category": "data",
         "shape": "rectangle",
         "lane": "downstream",
-        "order": 3
+        "order": 3,
+        "frameId": "store"
       }
     },
     {
@@ -184,7 +207,8 @@
         "category": "external",
         "shape": "rectangle",
         "lane": "upstream",
-        "order": 2
+        "order": 2,
+        "frameId": "request"
       }
     },
     {
@@ -201,7 +225,8 @@
         "category": "data",
         "shape": "rectangle",
         "lane": "main",
-        "order": 3
+        "order": 3,
+        "frameId": "async"
       }
     },
     {
@@ -218,7 +243,8 @@
         "category": "runtime",
         "shape": "rectangle",
         "lane": "main",
-        "order": 4
+        "order": 4,
+        "frameId": "async"
       }
     }
   ],

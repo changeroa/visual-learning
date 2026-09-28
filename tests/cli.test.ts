@@ -103,6 +103,29 @@ describe("visual-note CLI", () => {
     expect(rejected.stderr).toContain("unknown semantic ID missing-node");
   });
 
+  test("review-learning warns when a single-row figure is too wide to read", () => {
+    // Given
+    const directory = mkdtempSync(join(tmpdir(), "visual-note-review-width-"));
+    const wide = join(directory, "wide.json");
+    const spec = JSON.parse(
+      readFileSync(join(import.meta.dir, "fixtures/learning/checkout-journey.json"), "utf8"),
+    ) as {
+      presentation: { layout: string; frames: unknown[] };
+      nodes: { visual: { frameId?: string } }[];
+    };
+    spec.presentation = { ...spec.presentation, layout: "timeline", frames: [] };
+    for (const node of spec.nodes) delete node.visual.frameId;
+    writeFileSync(wide, `${JSON.stringify(spec)}\n`);
+    // When
+    const result = run(["review-learning", "--spec", wide, "--json"]);
+    // Then
+    expect(result.code).toBe(0);
+    const rules = (JSON.parse(result.stdout) as { findings: { rule: string }[] }).findings.map(
+      (finding) => finding.rule,
+    );
+    expect(rules).toContain("LR07-figure-width");
+  });
+
   test("emits and compiles the render-independent interactive authoring contract", () => {
     const fixture = join(import.meta.dir, "fixtures/interactive-authoring.json");
     const schema = run(["authoring-schema", "--json"]);

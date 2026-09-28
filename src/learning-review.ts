@@ -1,4 +1,5 @@
 import { readJson } from "./io";
+import { planScene } from "./renderer-plan";
 import { parseVisualNoteSpec, type VisualNoteSpec } from "./schema";
 
 type Severity = "warn" | "info";
@@ -11,6 +12,7 @@ type Finding = {
 };
 
 const ROUTE_SUGGESTION_NODE_COUNT = 5;
+const READABLE_FIGURE_WIDTH = 1600;
 
 function questionRule(spec: VisualNoteSpec): Finding[] {
   if (spec.learning !== undefined) return [];
@@ -103,6 +105,24 @@ function questionStatusRule(spec: VisualNoteSpec): Finding[] {
     }));
 }
 
+function widthRule(spec: VisualNoteSpec): Finding[] {
+  const width = Math.max(
+    0,
+    ...planScene(spec).elements.map((element) => element.x + element.width),
+  );
+  if (width <= READABLE_FIGURE_WIDTH) return [];
+  return [
+    {
+      rule: "LR07-figure-width",
+      severity: "warn",
+      target: null,
+      message: `the planned figure is ${Math.round(width)}px wide and will shrink below readable text size at note width; group nodes into presentation frames with the components or frames layout, or split the view`,
+      basis:
+        "MODERATE: check the smallest rendered text at the intended viewing scale (research reference R10); learner profile T-5/T-10 readability",
+    },
+  ];
+}
+
 export function reviewLearningSpec(path: string): {
   readonly operation: "review-learning";
   readonly artifactId: string;
@@ -118,6 +138,7 @@ export function reviewLearningSpec(path: string): {
     ...scopeRule(spec),
     ...verifyRule(spec),
     ...questionStatusRule(spec),
+    ...widthRule(spec),
   ];
   return {
     operation: "review-learning",

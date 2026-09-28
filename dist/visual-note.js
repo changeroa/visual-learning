@@ -9338,6 +9338,7 @@ function compileInteractiveAuthoringDocument(raw) {
 
 // src/learning-review.ts
 var ROUTE_SUGGESTION_NODE_COUNT = 5;
+var READABLE_FIGURE_WIDTH = 1600;
 function questionRule(spec) {
   if (spec.learning !== undefined)
     return [];
@@ -9413,6 +9414,20 @@ function questionStatusRule(spec) {
     basis: "learner profile bias: first framing hardens into fact"
   }));
 }
+function widthRule(spec) {
+  const width = Math.max(0, ...planScene(spec).elements.map((element) => element.x + element.width));
+  if (width <= READABLE_FIGURE_WIDTH)
+    return [];
+  return [
+    {
+      rule: "LR07-figure-width",
+      severity: "warn",
+      target: null,
+      message: `the planned figure is ${Math.round(width)}px wide and will shrink below readable text size at note width; group nodes into presentation frames with the components or frames layout, or split the view`,
+      basis: "MODERATE: check the smallest rendered text at the intended viewing scale (research reference R10); learner profile T-5/T-10 readability"
+    }
+  ];
+}
 function reviewLearningSpec(path) {
   const spec = parseVisualNoteSpec(readJson(path));
   const findings = [
@@ -9421,7 +9436,8 @@ function reviewLearningSpec(path) {
     ...routeRule(spec),
     ...scopeRule(spec),
     ...verifyRule(spec),
-    ...questionStatusRule(spec)
+    ...questionStatusRule(spec),
+    ...widthRule(spec)
   ];
   return {
     operation: "review-learning",
