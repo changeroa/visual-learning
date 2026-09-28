@@ -161,7 +161,7 @@ function analogySection(spec: VisualNoteSpec): string | null {
 ${analogies
   .map(
     (entry) =>
-      `**${entry.analogy}**\n\n- 맞는 부분: ${entry.holds.join("; ")}\n- 맞지 않는 부분: ${entry.breaks.join("; ")}`,
+      `**${entry.analogy}**\n\n- 맞는 부분:\n${entry.holds.map((item) => `  - ${item}`).join("\n")}\n- 맞지 않는 부분:\n${entry.breaks.map((item) => `  - ${item}`).join("\n")}`,
   )
   .join("\n\n")}`;
 }

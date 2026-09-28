@@ -9386,7 +9386,7 @@ function scopeRule(spec) {
       severity: trustBoundary ? "warn" : "info",
       target: null,
       message: trustBoundary ? "a trust-boundary view is one threat-model view; list the threats, attacker capabilities, and mitigations it does not model" : "list what this view deliberately leaves out",
-      basis: trustBoundary ? "SUPPORTED (debate D-16): DFD is a scoped view, not a complete threat model" : "STRONG: explicit scope and omissions (research reference R4)"
+      basis: trustBoundary ? "SUPPORTED (debate D-16): DFD is a scoped view, not a complete threat model" : "STRONG as documentation practice (research reference R4); trust-calibration effect UNRESOLVED (debate E-11)"
     }
   ];
 }
@@ -9627,8 +9627,12 @@ function analogySection(spec) {
 
 ${analogies.map((entry) => `**${entry.analogy}**
 
-- \uB9DE\uB294 \uBD80\uBD84: ${entry.holds.join("; ")}
-- \uB9DE\uC9C0 \uC54A\uB294 \uBD80\uBD84: ${entry.breaks.join("; ")}`).join(`
+- \uB9DE\uB294 \uBD80\uBD84:
+${entry.holds.map((item) => `  - ${item}`).join(`
+`)}
+- \uB9DE\uC9C0 \uC54A\uB294 \uBD80\uBD84:
+${entry.breaks.map((item) => `  - ${item}`).join(`
+`)}`).join(`
 
 `)}`;
 }
