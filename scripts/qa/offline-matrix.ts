@@ -18,10 +18,8 @@ export type MatrixContext = {
   readonly sandboxExec: string;
   readonly profile: string;
   readonly cli: string;
-  readonly stubCli: string;
   readonly source: string;
   readonly bundle: string;
-  readonly verifiedVaultId: string;
   readonly env: Record<string, string | undefined>;
   readonly harnessPid: number;
 };
@@ -42,7 +40,7 @@ export type CommandRecord = {
 
 export type MatrixRunReceipt = {
   readonly run: number;
-  readonly vault: string;
+  readonly root: string;
   readonly verdict: "PASS" | "FAIL";
   readonly setup: CommandRecord;
   readonly commands: readonly CommandRecord[];
@@ -50,8 +48,8 @@ export type MatrixRunReceipt = {
 
 const TIMEOUT_MS = 60_000;
 
-function atlas(vault: string, project: string): string {
-  return join(vault, "Engineering Atlas/10 Projects", project);
+function atlas(root: string, project: string): string {
+  return join(root, "Engineering Atlas/10 Projects", project);
 }
 
 async function record(
@@ -94,11 +92,11 @@ function parsed(stdout: string): Record<string, unknown> {
 export async function runMatrix(
   ctx: MatrixContext,
   run: number,
-  vault: string,
-  initVault: string,
+  root: string,
+  initRoot: string,
   project: string,
 ): Promise<MatrixRunReceipt> {
-  for (const directory of [vault, initVault]) {
+  for (const directory of [root, initRoot]) {
     rmSync(directory, { recursive: true, force: true });
     mkdirSync(directory, { recursive: true });
   }
@@ -108,10 +106,8 @@ export async function runMatrix(
     [
       ctx.cli,
       "bootstrap",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       project,
       "--source",
@@ -122,7 +118,7 @@ export async function runMatrix(
     ],
     "exit 0",
   );
-  const assets = join(atlas(vault, project), "_assets");
+  const assets = join(atlas(root, project), "_assets");
   const createSpec = join(assets, "walkthrough-create.json");
   const refreshSpec = join(assets, "walkthrough-refresh-v2.json");
   const artifactId = (readJson(refreshSpec) as { artifactId: string }).artifactId;
@@ -132,30 +128,12 @@ export async function runMatrix(
     checked: (value: Record<string, unknown>) => boolean;
   }[] = [
     {
-      key: "preflight",
-      argv: [
-        ctx.cli,
-        "preflight",
-        "--obsidian-cli",
-        ctx.stubCli,
-        "--expected-vault",
-        vault,
-        "--json",
-      ],
-      checked: (value) =>
-        value["status"] === "READY" &&
-        value["verifiedVaultId"] === ctx.verifiedVaultId &&
-        value["observedVault"] === vault,
-    },
-    {
       key: "init",
       argv: [
         ctx.cli,
         "init",
-        "--vault",
-        initVault,
-        "--expected-vault",
-        initVault,
+        "--root",
+        initRoot,
         "--project",
         `${project}-init`,
         "--source",
@@ -169,10 +147,8 @@ export async function runMatrix(
       argv: [
         ctx.cli,
         "create",
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
+        "--root",
+        root,
         "--project",
         project,
         "--spec",
@@ -191,10 +167,8 @@ export async function runMatrix(
       argv: [
         ctx.cli,
         "refresh",
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
+        "--root",
+        root,
         "--project",
         project,
         "--spec",
@@ -211,33 +185,12 @@ export async function runMatrix(
       checked: (value) => value["valid"] === true,
     },
     {
-      key: "open",
-      argv: [
-        ctx.cli,
-        "open",
-        "--obsidian-cli",
-        ctx.stubCli,
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
-        "--project",
-        project,
-        "--artifact-id",
-        artifactId,
-        "--json",
-      ],
-      checked: (value) => value["opened"] === true && typeof value["path"] === "string",
-    },
-    {
       key: "restore",
       argv: [
         ctx.cli,
         "restore",
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
+        "--root",
+        root,
         "--project",
         project,
         "--artifact-id",
@@ -267,7 +220,7 @@ export async function runMatrix(
     if (!ok) verdict = "FAIL";
     entries.push(entry);
   }
-  return { run, vault, verdict, setup: setup.entry, commands: entries };
+  return { run, root, verdict, setup: setup.entry, commands: entries };
 }
 
 export type AdversarialClass = {
@@ -283,11 +236,11 @@ export type AdversarialReceipt = {
   readonly classes: readonly AdversarialClass[];
 };
 
-function watchVault(vault: string): { watcher: FSWatcher | null; method: string } {
+function watchRoot(root: string): { watcher: FSWatcher | null; method: string } {
   try {
-    return { watcher: watch(vault, { recursive: true }), method: "fs.watch(recursive)" };
+    return { watcher: watch(root, { recursive: true }), method: "fs.watch(recursive)" };
   } catch {
-    const history = transactionHistoryRootGuess(vault);
+    const history = transactionHistoryRootGuess(root);
     if (history === null) return { watcher: null, method: "unavailable" };
     try {
       return { watcher: watch(history), method: "fs.watch(history-root)" };
@@ -297,8 +250,8 @@ function watchVault(vault: string): { watcher: FSWatcher | null; method: string 
   }
 }
 
-function transactionHistoryRootGuess(vault: string): string | null {
-  const projects = join(vault, "Engineering Atlas/10 Projects");
+function transactionHistoryRootGuess(root: string): string | null {
+  const projects = join(root, "Engineering Atlas/10 Projects");
   if (!existsSync(projects)) return null;
   const first = readdirSync(projects)
     .sort()
@@ -308,13 +261,13 @@ function transactionHistoryRootGuess(vault: string): string | null {
 
 async function interruptRefresh(
   ctx: MatrixContext,
-  vault: string,
+  root: string,
   project: string,
   artifactId: string,
   spec: string,
 ): Promise<{ killed: boolean; exitCode: number | null; method: string }> {
-  const token = openTransaction(vault, project, artifactId).state.committedToken;
-  const { watcher, method } = watchVault(vault);
+  const token = openTransaction(root, project, artifactId).state.committedToken;
+  const { watcher, method } = watchRoot(root);
   const proc = Bun.spawn(
     [
       ctx.sandboxExec,
@@ -322,10 +275,8 @@ async function interruptRefresh(
       ctx.profile,
       ctx.cli,
       "refresh",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       project,
       "--spec",
@@ -357,22 +308,20 @@ async function interruptRefresh(
 
 async function resumeRefresh(
   ctx: MatrixContext,
-  vault: string,
+  root: string,
   project: string,
   artifactId: string,
   spec: string,
 ): Promise<SandboxedRun> {
-  const token = openTransaction(vault, project, artifactId).state.committedToken;
+  const token = openTransaction(root, project, artifactId).state.committedToken;
   return runSandboxed({
     sandboxExec: ctx.sandboxExec,
     profile: ctx.profile,
     argv: [
       ctx.cli,
       "refresh",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       project,
       "--spec",
@@ -391,21 +340,21 @@ async function resumeRefresh(
 export async function runAdversarial(
   ctx: MatrixContext,
   input: {
-    readonly vault: string;
+    readonly root: string;
     readonly project: string;
     readonly scratch: string;
     readonly flakyVerdictsEqual: boolean;
   },
 ): Promise<AdversarialReceipt> {
   const classes: AdversarialClass[] = [];
-  const assets = join(atlas(input.vault, input.project), "_assets");
+  const assets = join(atlas(input.root, input.project), "_assets");
   const createSpec = join(assets, "walkthrough-create.json");
   const refreshSpec = join(assets, "walkthrough-refresh-v2.json");
   const artifactId = (readJson(refreshSpec) as { artifactId: string }).artifactId;
 
   const malformedPath = join(input.scratch, "malformed.json");
   writeFileSync(malformedPath, '{"artifactId":');
-  const before = treeDigest(input.vault);
+  const before = treeDigest(input.root);
   const malformedValidate = await runSandboxed({
     sandboxExec: ctx.sandboxExec,
     profile: ctx.profile,
@@ -421,10 +370,8 @@ export async function runAdversarial(
     argv: [
       ctx.cli,
       "create",
-      "--vault",
-      input.vault,
-      "--expected-vault",
-      input.vault,
+      "--root",
+      input.root,
       "--project",
       input.project,
       "--spec",
@@ -436,14 +383,14 @@ export async function runAdversarial(
     label: "malformed-create",
     harnessPid: ctx.harnessPid,
   });
-  const unchanged = treeDigest(input.vault).digest === before.digest;
+  const unchanged = treeDigest(input.root).digest === before.digest;
   classes.push({
     class: "malformed-input",
     result:
       malformedValidate.exitCode === 2 && malformedCreate.exitCode === 2 && unchanged
         ? "PASS"
         : "FAIL",
-    detail: "malformed spec exits 2 for validate and create with an unchanged vault tree digest",
+    detail: "malformed spec exits 2 for validate and create with an unchanged root tree digest",
   });
 
   classes.push({
@@ -458,19 +405,13 @@ export async function runAdversarial(
   let method = "unavailable";
   while (attempts < 4 && landed === 0) {
     attempts += 1;
-    const attempt = await interruptRefresh(
-      ctx,
-      input.vault,
-      input.project,
-      artifactId,
-      refreshSpec,
-    );
+    const attempt = await interruptRefresh(ctx, input.root, input.project, artifactId, refreshSpec);
     method = attempt.method;
     if (attempt.killed) landed += 1;
     else break;
   }
-  const resume = await resumeRefresh(ctx, input.vault, input.project, artifactId, refreshSpec);
-  const lockRoot = transactionPaths(input.vault, input.project, artifactId).lockRoot;
+  const resume = await resumeRefresh(ctx, input.root, input.project, artifactId, refreshSpec);
+  const lockRoot = transactionPaths(input.root, input.project, artifactId).lockRoot;
   const lockResidue = (() => {
     let markers = existsSync(join(lockRoot, "writer")) ? 1 : 0;
     const readers = join(lockRoot, "readers");
@@ -480,10 +421,10 @@ export async function runAdversarial(
   classes.push({
     class: "cancel-resume-via-child-sigterm",
     result: landed >= 1 && resume.exitCode === 0 && lockResidue === 0 ? "PASS" : "FAIL",
-    detail: `SIGTERM on first vault-write event (${method}) killed ${landed}/${attempts} sandboxed refresh children; recovery reopened state, clean rerun exited 0, live lock markers remaining ${lockResidue}`,
+    detail: `SIGTERM on first root-write event (${method}) killed ${landed}/${attempts} sandboxed refresh children; recovery reopened state, clean rerun exited 0, live lock markers remaining ${lockResidue}`,
   });
 
-  const statePath = transactionPaths(input.vault, input.project, artifactId).statePath;
+  const statePath = transactionPaths(input.root, input.project, artifactId).statePath;
   const stateBefore = readFileSync(statePath).toString("hex");
   const stale = await runSandboxed({
     sandboxExec: ctx.sandboxExec,
@@ -491,10 +432,8 @@ export async function runAdversarial(
     argv: [
       ctx.cli,
       "refresh",
-      "--vault",
-      input.vault,
-      "--expected-vault",
-      input.vault,
+      "--root",
+      input.root,
       "--project",
       input.project,
       "--spec",
@@ -538,31 +477,10 @@ export async function runAdversarial(
   } catch {
     dirtyValidateOk = false;
   }
-  const dirtyPreflight = await runSandboxed({
-    sandboxExec: ctx.sandboxExec,
-    profile: ctx.profile,
-    argv: [
-      ctx.cli,
-      "preflight",
-      "--obsidian-cli",
-      ctx.stubCli,
-      "--expected-vault",
-      input.vault,
-      "--json",
-    ],
-    env: { ...ctx.env, HOME: input.vault },
-    timeoutMs: TIMEOUT_MS,
-    label: "dirty-env-preflight",
-    harnessPid: ctx.harnessPid,
-  });
   classes.push({
     class: "dirty-env",
-    result:
-      dirtyValidateOk && dirtyPreflight.exitCode === 4 && dirtyPreflight.stderr.includes("registry")
-        ? "PASS"
-        : "FAIL",
-    detail:
-      "polluted PATH/env still validates correctly; a HOME without the sandbox registry fails preflight safely with exit 4",
+    result: dirtyValidateOk ? "PASS" : "FAIL",
+    detail: "a polluted PATH and injected env vars still validate the spec correctly",
   });
 
   const hung = await runSandboxed({
@@ -586,12 +504,12 @@ export async function runAdversarial(
     argv: ["/usr/bin/true"],
     env: ctx.env,
     timeoutMs: TIMEOUT_MS,
-    label: "decoy-open",
+    label: "decoy-validate",
     harnessPid: ctx.harnessPid,
   });
   let decoyDetected = false;
   try {
-    decoyDetected = parsed(decoy.stdout)["opened"] !== true;
+    decoyDetected = parsed(decoy.stdout)["valid"] !== true;
   } catch {
     decoyDetected = true;
   }
@@ -599,66 +517,35 @@ export async function runAdversarial(
     class: "misleading-rc0",
     result: decoy.exitCode === 0 && decoyDetected ? "PASS" : "FAIL",
     detail:
-      "exit-0 child without the open receipt contract is rejected by output-shape verification",
+      "exit-0 child without the validate receipt contract is rejected by output-shape verification",
   });
 
   classes.push({
     class: "flaky-repeat",
     result: input.flakyVerdictsEqual ? "PASS" : "FAIL",
-    detail: "two independent sandboxed matrix runs on fresh vaults produced identical verdicts",
+    detail: "two independent sandboxed matrix runs on fresh roots produced identical verdicts",
   });
 
   let repeatLanded = 0;
   let repeatAttempts = 0;
   while (repeatAttempts < 6 && repeatLanded < 3) {
     repeatAttempts += 1;
-    const attempt = await interruptRefresh(
-      ctx,
-      input.vault,
-      input.project,
-      artifactId,
-      refreshSpec,
-    );
+    const attempt = await interruptRefresh(ctx, input.root, input.project, artifactId, refreshSpec);
     if (attempt.killed) repeatLanded += 1;
     else break;
   }
-  const repeatResume = await resumeRefresh(
-    ctx,
-    input.vault,
-    input.project,
-    artifactId,
-    refreshSpec,
-  );
-  const repeatOpen = await runSandboxed({
-    sandboxExec: ctx.sandboxExec,
-    profile: ctx.profile,
-    argv: [
-      ctx.cli,
-      "open",
-      "--obsidian-cli",
-      ctx.stubCli,
-      "--vault",
-      input.vault,
-      "--expected-vault",
-      input.vault,
-      "--project",
-      input.project,
-      "--artifact-id",
-      artifactId,
-      "--json",
-    ],
-    env: ctx.env,
-    timeoutMs: TIMEOUT_MS,
-    label: "post-interruption-open",
-    harnessPid: ctx.harnessPid,
-  });
+  const repeatResume = await resumeRefresh(ctx, input.root, input.project, artifactId, refreshSpec);
+  let reopened = false;
+  try {
+    reopened =
+      openTransaction(input.root, input.project, artifactId).state.committedToken.length > 0;
+  } catch {
+    reopened = false;
+  }
   classes.push({
     class: "repeated-interruptions",
-    result:
-      repeatLanded >= 1 && repeatResume.exitCode === 0 && repeatOpen.exitCode === 0
-        ? "PASS"
-        : "FAIL",
-    detail: `${repeatLanded} SIGTERM interruptions across ${repeatAttempts} attempts; final clean refresh and open both exited 0`,
+    result: repeatLanded >= 1 && repeatResume.exitCode === 0 && reopened ? "PASS" : "FAIL",
+    detail: `${repeatLanded} SIGTERM interruptions across ${repeatAttempts} attempts; final clean refresh exited 0 and the transaction reopened`,
   });
 
   return {

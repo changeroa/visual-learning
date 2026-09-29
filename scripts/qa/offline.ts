@@ -10,7 +10,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { optional, parseOptions, required } from "../../src/arguments";
 import { jsonBytes, sha256 } from "../../src/io";
@@ -22,17 +21,14 @@ import {
 } from "./offline-matrix";
 import {
   assertNoPlaintext,
-  buildRegistryJson,
   chainFromSnapshot,
   classifyNetworkDenial,
   descentProven,
-  OFFLINE_CLI_STUB,
   PS_COLUMNS,
   parsePsSnapshot,
   scanRootsForPlaintext,
   sentinelRecord,
   validateProfileContent,
-  validateStubScript,
 } from "./offline-support";
 
 const skillRoot = resolve(import.meta.dir, "../..");
@@ -180,14 +176,6 @@ function fileSha(path: string): string | null {
   }
 }
 
-function obsidianProcesses(): readonly { pid: number; command: string }[] {
-  const text = Bun.spawnSync(["ps", "-axo", PS_COLUMNS], { stdout: "pipe" }).stdout.toString();
-  return parsePsSnapshot(text).filter(
-    (entry) =>
-      entry.command.trim().startsWith("/Applications/Obsidian.app/") && entry.pid !== process.pid,
-  );
-}
-
 async function containmentProbe(
   sandboxExec: string,
   profile: string,
@@ -247,11 +235,7 @@ async function main(): Promise<void> {
     new Set([
       "--sandbox-exec",
       "--profile",
-      "--obsidian-app",
-      "--obsidian-cli",
-      "--vault",
-      "--expected-vault",
-      "--verified-vault-id",
+      "--root",
       "--generate-sentinel",
       "--record-sentinel-sha-only",
       "--commands",
@@ -310,45 +294,21 @@ async function main(): Promise<void> {
 
   const testsTmp = join(skillRoot, "tests", "tmp");
   mkdirSync(testsTmp, { recursive: true });
-  const vaultArg = resolve(required(options, "--vault"));
-  const expectedArg = resolve(required(options, "--expected-vault"));
-  mkdirSync(vaultArg, { recursive: true });
-  const vault = realpathSync(vaultArg);
-  if (vault !== realpathSync(expectedArg))
-    blocked(out, "vault and expected-vault must match", { vault });
-  const verifiedVaultId = required(options, "--verified-vault-id");
+  const rootArg = resolve(required(options, "--root"));
+  mkdirSync(rootArg, { recursive: true });
+  const root = realpathSync(rootArg);
   const designated = resolve(required(options, "--generate-sentinel"));
   if (!designated.startsWith(testsTmp))
     blocked(out, `sentinel must live under tests/tmp: ${designated}`, {});
   if (!options.flags.has("--record-sentinel-sha-only"))
     blocked(out, "--record-sentinel-sha-only is required for privacy claims", {});
   const commands = required(options, "--commands").split(",").filter(Boolean).sort();
-  const expectedCommands = [
-    "create",
-    "extend",
-    "init",
-    "open",
-    "preflight",
-    "refresh",
-    "restore",
-    "validate",
-  ];
+  const expectedCommands = ["create", "extend", "init", "refresh", "restore", "validate"];
   if (JSON.stringify(commands) !== JSON.stringify(expectedCommands))
     blocked(out, `--commands must be the full surface: ${expectedCommands.join(",")}`, {
       commands,
     });
   const flakyRepeat = Math.min(Number(optional(options, "--flaky-repeat") ?? "2"), 2);
-
-  const stubCli = join(skillRoot, "tests", "fixtures", "offline-obsidian-cli");
-  const stubContent = readFileSync(stubCli, "utf8");
-  if (
-    stubContent !== OFFLINE_CLI_STUB ||
-    !validateStubScript(stubContent).valid ||
-    !executable(stubCli)
-  )
-    blocked(out, "offline Obsidian CLI stub fixture is missing or invalid", { stubCli });
-  const obsidianApp = required(options, "--obsidian-app");
-  const obsidianCli = required(options, "--obsidian-cli");
 
   const outcome = await controlProbes(
     sandboxExec,
@@ -368,55 +328,36 @@ async function main(): Promise<void> {
     JSON.stringify({ designated, record: sentinelRecord(plaintext) }),
   ];
 
-  const registryPath = join(
-    homedir(),
-    "Library",
-    "Application Support",
-    "obsidian",
-    "obsidian.json",
-  );
-  const registryBefore = fileSha(registryPath);
   const runReceipts: MatrixRunReceipt[] = [];
   const scratch = join(testsTmp, "offline-tmp");
-  const vaults: readonly string[] = [vault, join(testsTmp, "offline-vault-r2")];
+  const roots: readonly string[] = [root, join(testsTmp, "offline-root-r2")];
   let containment: Record<string, unknown> | undefined;
   for (let index = 0; index < flakyRepeat; index += 1) {
-    const runVaultPath = vaults[index];
-    if (runVaultPath === undefined) continue;
-    mkdirSync(runVaultPath, { recursive: true });
-    const runVault = realpathSync(runVaultPath);
-    const initVaultPath = join(
-      testsTmp,
-      index === 0 ? "offline-init-vault" : "offline-init-vault-r2",
-    );
-    mkdirSync(initVaultPath, { recursive: true });
-    const initVault = realpathSync(initVaultPath);
+    const runRootPath = roots[index];
+    if (runRootPath === undefined) continue;
+    mkdirSync(runRootPath, { recursive: true });
+    const runRoot = realpathSync(runRootPath);
+    const initRootPath = join(testsTmp, index === 0 ? "offline-init-root" : "offline-init-root-r2");
+    mkdirSync(initRootPath, { recursive: true });
+    const initRoot = realpathSync(initRootPath);
     const sandboxHome = join(
       testsTmp,
       index === 0 ? "offline-sandbox-home" : "offline-sandbox-home-r2",
     );
-    const registryDir = join(sandboxHome, "Library", "Application Support", "obsidian");
-    mkdirSync(registryDir, { recursive: true });
-    writeFileSync(join(registryDir, "obsidian.json"), buildRegistryJson(verifiedVaultId, runVault));
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      HOME: sandboxHome,
-      OFFLINE_STUB_VAULT_PATH: runVault,
-    };
+    mkdirSync(sandboxHome, { recursive: true });
+    const env: Record<string, string | undefined> = { ...process.env, HOME: sandboxHome };
     leakSurfaces.push(JSON.stringify(env));
     const ctx: MatrixContext = {
       sandboxExec,
       profile: profilePath,
       cli: join(skillRoot, "bin", "visual-note"),
-      stubCli,
       source: join(skillRoot, "tests", "fixtures", "sample-project", "repo"),
       bundle: join(skillRoot, "tests", "fixtures", "sample-project", "bundle.json"),
-      verifiedVaultId,
       env,
       harnessPid: process.pid,
     };
     if (index === 0) containment = await containmentProbe(sandboxExec, profilePath, env);
-    const matrix = await runMatrix(ctx, index + 1, runVault, initVault, "offline-fixture");
+    const matrix = await runMatrix(ctx, index + 1, runRoot, initRoot, "offline-fixture");
     runReceipts.push(matrix);
     if (containment !== undefined && containment["descentProven"] !== true)
       blocked(out, "containment descent proof failed", { containmentProbe: containment });
@@ -428,21 +369,19 @@ async function main(): Promise<void> {
   );
 
   mkdirSync(scratch, { recursive: true });
-  const r2Vault = realpathSync(join(testsTmp, "offline-vault-r2"));
+  const r2Root = realpathSync(join(testsTmp, "offline-root-r2"));
   const r2Home = join(testsTmp, "offline-sandbox-home-r2");
   const adversarial = await runAdversarial(
     {
       sandboxExec,
       profile: profilePath,
       cli: join(skillRoot, "bin", "visual-note"),
-      stubCli,
       source: join(skillRoot, "tests", "fixtures", "sample-project", "repo"),
       bundle: join(skillRoot, "tests", "fixtures", "sample-project", "bundle.json"),
-      verifiedVaultId,
-      env: { ...process.env, HOME: r2Home, OFFLINE_STUB_VAULT_PATH: r2Vault },
+      env: { ...process.env, HOME: r2Home },
       harnessPid: process.pid,
     },
-    { vault: r2Vault, project: "offline-fixture", scratch, flakyVerdictsEqual },
+    { root: r2Root, project: "offline-fixture", scratch, flakyVerdictsEqual },
   );
   const adversarialOut = resolve(
     optional(options, "--adversarial-out") ?? join(evidenceDir, "task-11-adversarial.json"),
@@ -464,14 +403,7 @@ async function main(): Promise<void> {
     type: "Task11OfflineNetworkReceipt",
     status: sentinelOnly ? "DONE" : "BLOCKED",
     constraints: {
-      appLaunches: 0,
-      isolatedProfileLaunches: 0,
-      settingsUiAutomation: false,
-      cdpToggles: 0,
-      registrySeeding: "none; real registry SHA-256 recorded before and after",
-      realRegistryPath: registryPath,
-      obsidianAppRecordedNotLaunched: { path: obsidianApp, present: existsSync(obsidianApp) },
-      productionCliRecordedNotUsed: { path: obsidianCli, executable: executable(obsidianCli) },
+      sandboxHome: "disposable per-run HOME under tests/tmp",
       networkRoute: "none; every child runs under (deny network*)",
     },
     sandbox: {
@@ -480,10 +412,6 @@ async function main(): Promise<void> {
       profile: profilePath,
       profileContent: profileContent.trimEnd(),
       profileSha256: sha256(profileContent),
-      offlineCliStub: stubCli,
-      offlineCliStubSha256: sha256(stubContent),
-      stubRationale:
-        "filesystem-only canned responses inside a disposable sandbox HOME; no app launch, no real registry writes",
     },
     control: { proven: outcome.proven, probes: outcome.probes, denialStderrLog: denialLogPath },
     descent: { harnessPid: process.pid, containmentProbe: containment, matrixRuns: runReceipts },
@@ -534,18 +462,16 @@ async function main(): Promise<void> {
   rmSync(designated, { force: true });
   const plaintextGone = !existsSync(designated);
   for (const directory of [
-    vault,
-    join(testsTmp, "offline-vault-r2"),
-    join(testsTmp, "offline-init-vault"),
-    join(testsTmp, "offline-init-vault-r2"),
+    root,
+    join(testsTmp, "offline-root-r2"),
+    join(testsTmp, "offline-init-root"),
+    join(testsTmp, "offline-init-root-r2"),
     join(testsTmp, "offline-sandbox-home"),
     join(testsTmp, "offline-sandbox-home-r2"),
     scratch,
   ]) {
     rmSync(directory, { recursive: true, force: true });
   }
-  const residualObsidian = obsidianProcesses();
-  const registryUnchanged = fileSha(registryPath) === registryBefore;
   const cleanupOut = resolve(
     optional(options, "--cleanup-out") ?? join(evidenceDir, "task-11-cleanup.json"),
   );
@@ -556,18 +482,9 @@ async function main(): Promise<void> {
       type: "Task11CleanupReceipt",
       sentinelPlaintextDeleted: plaintextGone,
       tempDirectoriesRemoved: true,
-      obsidianProcessesLeft: residualObsidian,
-      realRegistryUnchanged: registryUnchanged,
     }),
   );
-  const finalStatus =
-    plaintextGone &&
-    sentinelOnly &&
-    secondClean &&
-    residualObsidian.length === 0 &&
-    registryUnchanged
-      ? "DONE"
-      : "BLOCKED";
+  const finalStatus = plaintextGone && sentinelOnly && secondClean ? "DONE" : "BLOCKED";
   const doneClaim = resolve(
     optional(options, "--done-claim") ?? join(evidenceDir, "task-11-done-claim.json"),
   );
@@ -588,7 +505,6 @@ async function main(): Promise<void> {
         sentinelScanLog: scanLog,
         adversarialVerdict: adversarial.verdict,
         matrixVerdicts: runReceipts.map((receipt) => receipt.verdict),
-        appLaunches: 0,
       },
       evidence: Object.fromEntries(
         [out, scanLog, denialLogPath, adversarialOut, cleanupOut].map((path) => [

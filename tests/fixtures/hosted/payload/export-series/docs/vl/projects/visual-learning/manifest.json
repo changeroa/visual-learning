@@ -16,7 +16,7 @@
   "files": [
     {
       "relativePath": "specs/vl-01-architecture.json",
-      "sha256": "c38b876b5517fe546f0ea49dc39a7fb16bd7a43ae023fa0d2961ea518539c8c3"
+      "sha256": "c538a4cb7146d65715994bfc5e87907ebeda0191788c0fa6d3cc6e829aa8afb0"
     },
     {
       "relativePath": "specs/vl-02-export-series.json",
