@@ -1,0 +1,53 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "visual-atlas",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "ATLAS_DB",
+      "database_name": "visual-atlas",
+      // Placeholder; todo 14 fills in the real id after `wrangler d1 create`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "atlas.iyendev.com", "custom_domain": true }],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "ALLOWED_EMAIL": "changerao@gmail.com",
+    "SERVICE_CLIENT_ID": ""
+  },
+  "env": {
+    // Bindings and vars are not inherited by named environments, so `local` repeats them.
+    // `routes: []` keeps the local environment from ever claiming the production custom domain.
+    "local": {
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "ATLAS_DB",
+          "database_name": "visual-atlas",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "ALLOWED_EMAIL": "changerao@gmail.com",
+        "SERVICE_CLIENT_ID": "",
+        "ENVIRONMENT": "local"
+      }
+    }
+  }
+}

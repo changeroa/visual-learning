@@ -5,10 +5,11 @@ import { currentProjectState } from "./bootstrap-current";
 import { writeProjectNotes } from "./bootstrap-notes";
 import { InputError } from "./errors";
 import { jsonBytes, readJson } from "./io";
-import { ensureMatchingVault, ensureRealDirectory } from "./path-guard";
+import { ensureRealDirectory } from "./path-guard";
 import { publishProjectDirectory } from "./project-publish";
 import { sceneFromSpec } from "./scene-bootstrap";
-import { parseVisualNoteSpec, readSourceRevision, type VisualNoteSpec } from "./schema";
+import { parseVisualNoteSpec, type VisualNoteSpec } from "./schema";
+import { readSourceRevision } from "./source-revision";
 import { generateTemplateBundle } from "./template-generate";
 import { parseTemplateBundle } from "./template-schema";
 import { bootstrapTransaction } from "./transaction-engine";
@@ -75,7 +76,7 @@ function walkthroughSpec(source: { readonly root: string; readonly commit: strin
 }
 
 function bootstrapReceipt(
-  vault: string,
+  root: string,
   project: string,
   source: { readonly root: string; readonly commit: string | null },
   artifactCount: number,
@@ -106,30 +107,29 @@ function bootstrapReceipt(
     ],
     publication: {
       status,
-      targetProject: join(vault, "Engineering Atlas/10 Projects", project),
+      targetProject: join(root, "Engineering Atlas/10 Projects", project),
     },
   };
 }
 
 export function bootstrapProject(input: {
-  readonly vault: string;
-  readonly expectedVault: string;
+  readonly root: string;
   readonly project: string;
   readonly source: string;
   readonly bundlePath?: string;
 }): unknown {
-  const vault = ensureMatchingVault(input.vault, input.expectedVault);
+  const root = ensureRealDirectory(input.root, "root");
   const source = ensureRealDirectory(input.source, "source");
   const metadata = readSourceMetadata(source);
   const current = currentProjectState({
-    vault,
+    root,
     project: input.project,
     metadata,
     ...(input.bundlePath === undefined ? {} : { bundlePath: input.bundlePath }),
   });
   if (current !== null) {
     return bootstrapReceipt(
-      vault,
+      root,
       input.project,
       metadata,
       current.artifactCount,
@@ -138,9 +138,9 @@ export function bootstrapProject(input: {
     );
   }
 
-  const stageVault = mkdtempSync(join(tmpdir(), "visual-note-bootstrap-"));
+  const stageRoot = mkdtempSync(join(tmpdir(), "visual-note-bootstrap-"));
   try {
-    const base = join(stageVault, "Engineering Atlas/10 Projects", input.project);
+    const base = join(stageRoot, "Engineering Atlas/10 Projects", input.project);
     for (const relativePath of [
       "01 Architecture",
       "02 ADR",
@@ -167,7 +167,7 @@ export function bootstrapProject(input: {
         const spec = parseVisualNoteSpec({ ...view.spec, source: metadata });
         specs.push(spec);
         bootstrapTransaction({
-          vault: stageVault,
+          vault: stageRoot,
           project: input.project,
           spec,
           scene: sceneFromSpec(spec, "sample-bootstrap"),
@@ -188,13 +188,13 @@ export function bootstrapProject(input: {
         }),
       ),
     );
-    writeProjectNotes(stageVault, input.project, metadata, specs, refreshBase.artifactId);
+    writeProjectNotes(stageRoot, input.project, metadata, specs, refreshBase.artifactId);
     publishProjectDirectory(
-      join(stageVault, "Engineering Atlas/10 Projects", input.project),
-      join(vault, "Engineering Atlas/10 Projects", input.project),
+      join(stageRoot, "Engineering Atlas/10 Projects", input.project),
+      join(root, "Engineering Atlas/10 Projects", input.project),
     );
     return bootstrapReceipt(
-      vault,
+      root,
       input.project,
       metadata,
       specs.length,
@@ -202,6 +202,6 @@ export function bootstrapProject(input: {
       "CREATED",
     );
   } finally {
-    rmSync(stageVault, { recursive: true, force: true });
+    rmSync(stageRoot, { recursive: true, force: true });
   }
 }

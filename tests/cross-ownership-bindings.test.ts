@@ -135,9 +135,7 @@ describe("cross ownership bindings", () => {
     const spec = join(import.meta.dir, "fixtures/refresh-v2.json");
     const args = [
       "refresh",
-      "--vault",
-      root,
-      "--expected-vault",
+      "--root",
       root,
       "--project",
       project,
