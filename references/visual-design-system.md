@@ -31,7 +31,7 @@ specs/<artifact-id>.json
 manifest.json
 ```
 
-Use only relative links inside this tree. `index.md` links every companion note and embeds every SVG. Each companion note links the series home plus its previous and next views. Treat SVG as the read-only preview and `.excalidraw.md` as the editable source. Never add `.obsidian` below `docs/vl`. Keep generated project results isolated from the skill checkout and source repository.
+Use only relative links inside this tree. `index.md` links every companion note and embeds every SVG. Each companion note links the series home plus its previous and next views. Treat SVG as the read-only preview and `.excalidraw.md` as the editable source. Never add editor or app configuration directories below `docs/vl`; `visual-note publish` reads this tree as-is. Keep generated project results isolated from the skill checkout and source repository.
 
 ## Visual grammar
 

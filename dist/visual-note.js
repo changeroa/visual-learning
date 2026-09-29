@@ -3,7 +3,6 @@
 
 // src/cli.ts
 import { readFileSync as readFileSync15 } from "fs";
-import { join as join15 } from "path";
 
 // node_modules/zod/v4/core/core.js
 var _a;
@@ -4731,6 +4730,14 @@ function object(shape, params) {
   };
   return new ZodObject(def);
 }
+function looseObject(shape, params) {
+  return new ZodObject({
+    type: "object",
+    shape,
+    catchall: unknown(),
+    ...normalizeParams(params)
+  });
+}
 var ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
   $ZodUnion.init(inst, def);
   ZodType.init(inst, def);
@@ -5153,7 +5160,6 @@ function writeResult(value, json) {
 
 // src/operations.ts
 import { existsSync as existsSync8 } from "fs";
-import { isAbsolute as isAbsolute6, normalize as normalize5, relative as relative3 } from "path";
 
 // src/bootstrap.ts
 import { mkdirSync as mkdirSync6, mkdtempSync, rmSync as rmSync4, writeFileSync as writeFileSync5 } from "fs";
@@ -5374,16 +5380,6 @@ var visualNoteSpecSchema = object({
 });
 function parseVisualNoteSpec(input) {
   return visualNoteSpecSchema.parse(input);
-}
-function readSourceRevision(source) {
-  const result = Bun.spawnSync(["git", "-C", source, "rev-parse", "--verify", "HEAD"], {
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { PATH: process.env["PATH"] ?? "/usr/bin:/bin" }
-  });
-  if (result.exitCode !== 0)
-    return null;
-  return string2().regex(/^[0-9a-f]{40,64}$/).parse(result.stdout.toString().trim());
 }
 
 // src/template-style.ts
@@ -5614,7 +5610,7 @@ function hasExpectedBootstrapRevision(projectRoot, artifactId) {
   return metadata.sourceReceipt?.inode?.startsWith(bootstrapReceiptPrefix) === true && metadata.sourceReceipt?.generation?.startsWith(bootstrapReceiptPrefix) === true;
 }
 function currentProjectState(input) {
-  const projectRoot = join2(input.vault, "Engineering Atlas/10 Projects", input.project);
+  const projectRoot = join2(input.root, "Engineering Atlas/10 Projects", input.project);
   if (!existsSync2(projectRoot))
     return null;
   const status = lstatSync(projectRoot);
@@ -5720,9 +5716,9 @@ ${body.trim()}
 function kindLink(project, spec) {
   return `[[${artifactPaths(project, spec.artifactId).note}|${spec.title}]]`;
 }
-function writeProjectNotes(vault, project, source, specs, restoreArtifactId) {
+function writeProjectNotes(root, project, source, specs, restoreArtifactId) {
   const commit = source.commit ?? "null";
-  const base = join3(vault, "Engineering Atlas/10 Projects", project);
+  const base = join3(root, "Engineering Atlas/10 Projects", project);
   const byKind = new Map(specs.map((spec) => [spec.kind, kindLink(project, spec)]));
   const files = new Map([
     [
@@ -5778,26 +5774,26 @@ Workflow\uC640 sequence \uAD00\uCC30\uC744 \uC774\uC5B4\uC11C \uC77D\uC2B5\uB2C8
     ],
     [
       "05 Study Notes/Prompt Recipes.md",
-      note({ atlas_type: "study-note", status: "active", project }, "Prompt Recipes", `- \uD504\uB85C\uC81D\uD2B8 \uB9F5: \`$SKILL/bin/visual-note bootstrap --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json\`
-- \uD2B9\uC815 artifact \uCD94\uAC00: \`$SKILL/bin/visual-note create --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
+      note({ atlas_type: "study-note", status: "active", project }, "Prompt Recipes", `- \uD504\uB85C\uC81D\uD2B8 \uB9F5: \`$SKILL/bin/visual-note bootstrap --root "$ROOT" --project ${project} --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json\`
+- \uD2B9\uC815 artifact \uCD94\uAC00: \`$SKILL/bin/visual-note create --root "$ROOT" --project ${project} --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
 - refresh \uC804 \uC9C8\uBB38: \`\uC5B4\uB5A4 node\uB97C \uC720\uC9C0\uD558\uACE0 \uC5B4\uB5A4 edge\uB97C deprecatedAnchor \uC5C6\uC774 \uC9C0\uC6B8 \uC218 \uC788\uB294\uAC00?\``)
     ],
     [
       "05 Study Notes/Create Walkthrough.md",
-      note({ atlas_type: "study-note", status: "active", project }, "Create Walkthrough", `1. \`$SKILL/bin/visual-note validate --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
-2. \`$SKILL/bin/visual-note create --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\``)
+      note({ atlas_type: "study-note", status: "active", project }, "Create Walkthrough", `1. \`$SKILL/bin/visual-note validate --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
+2. \`$SKILL/bin/visual-note create --root "$ROOT" --project ${project} --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\``)
     ],
     [
       "05 Study Notes/Extend Walkthrough.md",
-      note({ atlas_type: "study-note", status: "active", project }, "Extend Walkthrough", `\`$SKILL/bin/visual-note extend --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-extend.json" --json\``)
+      note({ atlas_type: "study-note", status: "active", project }, "Extend Walkthrough", `\`$SKILL/bin/visual-note extend --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-extend.json" --json\``)
     ],
     [
       "05 Study Notes/Refresh Walkthrough.md",
-      note({ atlas_type: "study-note", status: "active", project }, "Refresh Walkthrough", `\`$SKILL/bin/visual-note refresh --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-refresh-v2.json" --expected-token cas-0 --json\``)
+      note({ atlas_type: "study-note", status: "active", project }, "Refresh Walkthrough", `\`$SKILL/bin/visual-note refresh --root "$ROOT" --project ${project} --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-refresh-v2.json" --expected-token cas-0 --json\``)
     ],
     [
       "05 Study Notes/Restore Walkthrough.md",
-      note({ atlas_type: "study-note", status: "active", project }, "Restore Walkthrough", `\`$SKILL/bin/visual-note restore --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --artifact-id ${restoreArtifactId} --revision-token cas-0 --expected-token cas-1 --json\``)
+      note({ atlas_type: "study-note", status: "active", project }, "Restore Walkthrough", `\`$SKILL/bin/visual-note restore --root "$ROOT" --project ${project} --artifact-id ${restoreArtifactId} --revision-token cas-0 --expected-token cas-1 --json\``)
     ],
     [
       "05 Study Notes/Visual Legend.md",
@@ -5813,7 +5809,7 @@ Workflow\uC640 sequence \uAD00\uCC30\uC744 \uC774\uC5B4\uC11C \uC77D\uC2B5\uB2C8
 - path swap: symlink \uB610\uB294 ancestor swap\uC774 \uAC10\uC9C0\uB418\uBA74 \uB2E4\uC2DC bootstrap \uD569\uB2C8\uB2E4.
 - repo dirty: Git source\uB294 clean status\uC5D0\uC11C\uB9CC revision\uC744 \uAE30\uB85D\uD569\uB2C8\uB2E4.
 - stale token: \`STATE\`\uC758 \uCD5C\uC2E0 token\uC744 \uB2E4\uC2DC \uC77D\uACE0 retry \uD569\uB2C8\uB2E4.
-- wrong vault: \`--vault\` \uC640 \`--expected-vault\` \uB97C \uB3D9\uC77C\uD558\uAC8C \uB9DE\uCDA5\uB2C8\uB2E4.`)
+- wrong root: \`--root\`\uAC00 \uAE30\uC874 \uC2E4\uC81C \uB514\uB809\uD130\uB9AC\uB97C \uAC00\uB9AC\uD0A4\uB294\uC9C0 \uD655\uC778\uD569\uB2C8\uB2E4.`)
     ]
   ]);
   for (const [relativePath, content] of files) {
@@ -5849,12 +5845,6 @@ function ensureRealDirectory(path, label) {
     }
   }
   return checked;
-}
-function ensureMatchingVault(vault, expectedVault) {
-  if (vault !== expectedVault) {
-    throw new RuntimeError("--vault and --expected-vault must identify the same path");
-  }
-  return ensureRealDirectory(vault, "vault");
 }
 
 // src/project-publish.ts
@@ -6465,6 +6455,18 @@ function sceneFromSpec(spec, source) {
   };
 }
 
+// src/source-revision.ts
+function readSourceRevision(source) {
+  const result = Bun.spawnSync(["git", "-C", source, "rev-parse", "--verify", "HEAD"], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { PATH: process.env["PATH"] ?? "/usr/bin:/bin" }
+  });
+  if (result.exitCode !== 0)
+    return null;
+  return string2().regex(/^[0-9a-f]{40,64}$/).parse(result.stdout.toString().trim());
+}
+
 // src/transaction-bootstrap.ts
 import { mkdirSync as mkdirSync4 } from "fs";
 
@@ -6901,10 +6903,10 @@ function removeFile(path) {
 
 // src/transaction-layout.ts
 import { join as join7 } from "path";
-function transactionPaths(vault, project, artifactId) {
+function transactionPaths(root, project, artifactId) {
   const artifact = artifactPaths(project, artifactId);
-  const historyRoot = join7(vault, artifact.base, "_history", artifactId);
-  const workingRoot = join7(vault, artifact.drawingFolder);
+  const historyRoot = join7(root, artifact.base, "_history", artifactId);
+  const workingRoot = join7(root, artifact.drawingFolder);
   return {
     historyRoot,
     statePath: join7(historyRoot, "STATE"),
@@ -6914,9 +6916,9 @@ function transactionPaths(vault, project, artifactId) {
     revisionsRoot: join7(historyRoot, "revisions"),
     workingRoot,
     lockRoot: join7(historyRoot, ".rwlock"),
-    stableSpecPath: join7(vault, artifact.spec),
-    stableNotePath: join7(vault, artifact.note),
-    stableSvgPath: join7(vault, artifact.svg),
+    stableSpecPath: join7(root, artifact.spec),
+    stableNotePath: join7(root, artifact.note),
+    stableSvgPath: join7(root, artifact.svg),
     revisionPath(token) {
       return join7(historyRoot, "revisions", token);
     },
@@ -7048,8 +7050,8 @@ function stageRevision(path, metadata, spec, note, svg, scene, fingerprint = "ca
   writeTextFsynced(files.metadata, metadataBytesValue);
   fsyncDirectory(path);
 }
-function noteForWorking(vault, paths, spec, workingPath, deprecatedAnchors) {
-  return noteBytes(spec, workingPath.slice(vault.length + 1), paths.stableSvgPath.slice(vault.length + 1), deprecatedAnchors);
+function noteForWorking(root, paths, spec, workingPath, deprecatedAnchors) {
+  return noteBytes(spec, workingPath.slice(root.length + 1), paths.stableSvgPath.slice(root.length + 1), deprecatedAnchors);
 }
 function mirrorCurrent(paths, spec, note, svg) {
   writeAtomicText(paths.stableSpecPath, jsonBytes(spec));
@@ -7166,11 +7168,11 @@ function validateRevisionBundle(path) {
 
 // src/transaction-bootstrap.ts
 function bootstrapTransaction(input) {
-  const paths = transactionPaths(input.vault, input.project, input.spec.artifactId);
+  const paths = transactionPaths(input.root, input.project, input.spec.artifactId);
   mkdirSync4(paths.historyRoot, { recursive: true });
   const token = "cas-0";
   const workingPath = paths.workingPath(token);
-  const note = noteForWorking(input.vault, paths, input.spec, workingPath, []);
+  const note = noteForWorking(input.root, paths, input.spec, workingPath, []);
   const svg = svgBytes(input.spec, input.scene);
   writeAtomicText(workingPath, encodeSceneToMarkdown(input.scene));
   const state = {
@@ -7803,31 +7805,6 @@ function recoverTransaction(paths) {
   }
   throw new RuntimeError("BLOCKED: mixed transaction tuple");
 }
-function reacquireShared(lock) {
-  lock.close();
-  return acquireLock(lock.root, "shared");
-}
-function openTransaction(vault, project, artifactId, control) {
-  const paths = transactionPaths(vault, project, artifactId);
-  const exclusive = acquireLock(paths.lockRoot, "exclusive");
-  let shared = null;
-  try {
-    const recovered = recoverTransaction(paths);
-    control?.beforeSharedReacquire?.();
-    shared = reacquireShared(exclusive);
-    const state = readState(paths.statePath);
-    const scene = validateState(paths, state).scene;
-    return { state, scene, recovery: recovered.recovery, downgrade: "release-reacquire" };
-  } catch (error) {
-    shared?.close();
-    exclusive.close();
-    if (error instanceof ConflictError || error instanceof RuntimeError)
-      throw error;
-    throw error;
-  } finally {
-    shared?.close();
-  }
-}
 
 // src/transaction-guard.ts
 function sameState(left, right) {
@@ -7858,7 +7835,7 @@ function mark(control, name) {
   control?.onBoundary?.(name);
 }
 function commitPrepared(input, control) {
-  const paths = transactionPaths(input.vault, input.project, input.artifactId);
+  const paths = transactionPaths(input.root, input.project, input.artifactId);
   const lock = acquireLock(paths.lockRoot, "exclusive");
   let subscription = null;
   let previousState = null;
@@ -7893,7 +7870,7 @@ function commitPrepared(input, control) {
     fsyncDirectory(dirname7(paths.beginPath));
     const workingPath = paths.workingPath(token);
     const revisionPath = paths.revisionPath(token);
-    const note = noteForWorking(input.vault, paths, prepared.spec, workingPath, prepared.deprecatedAnchors);
+    const note = noteForWorking(input.root, paths, prepared.spec, workingPath, prepared.deprecatedAnchors);
     const svg = svgBytes(prepared.spec, prepared.scene);
     mark(control, "stage-working");
     writeTextFsynced(`${workingPath}.tmp`, encodeSceneToMarkdown(prepared.scene));
@@ -7976,7 +7953,7 @@ function commitPrepared(input, control) {
 }
 function refreshTransaction(input, control) {
   return commitPrepared({
-    vault: input.vault,
+    root: input.root,
     project: input.project,
     artifactId: input.spec.artifactId,
     expectedToken: input.expectedToken,
@@ -7991,11 +7968,11 @@ function refreshTransaction(input, control) {
   }, control);
 }
 function restoreTransaction(input, control) {
-  const files = revisionFiles(transactionPaths(input.vault, input.project, input.artifactId).revisionPath(input.revisionToken));
+  const files = revisionFiles(transactionPaths(input.root, input.project, input.artifactId).revisionPath(input.revisionToken));
   const spec = JSON.parse(readFileSync10(files.spec, "utf8"));
   const scene = parseSceneMarkdown(readFileSync10(files.snapshot, "utf8")).scene;
   return commitPrepared({
-    vault: input.vault,
+    root: input.root,
     project: input.project,
     artifactId: input.artifactId,
     expectedToken: input.expectedToken,
@@ -8060,7 +8037,7 @@ function walkthroughSpec(source) {
     extend: parseVisualNoteSpec({ ...base, revision: 2, title: "Walkthrough Call Map Extend" })
   };
 }
-function bootstrapReceipt(vault, project, source, artifactCount, bundlePath, status) {
+function bootstrapReceipt(root, project, source, artifactCount, bundlePath, status) {
   return {
     operation: "bootstrap",
     project,
@@ -8074,26 +8051,26 @@ function bootstrapReceipt(vault, project, source, artifactCount, bundlePath, sta
     ],
     publication: {
       status,
-      targetProject: join10(vault, "Engineering Atlas/10 Projects", project)
+      targetProject: join10(root, "Engineering Atlas/10 Projects", project)
     }
   };
 }
 function bootstrapProject(input) {
-  const vault = ensureMatchingVault(input.vault, input.expectedVault);
+  const root = ensureRealDirectory(input.root, "root");
   const source = ensureRealDirectory(input.source, "source");
   const metadata = readSourceMetadata(source);
   const current = currentProjectState({
-    vault,
+    root,
     project: input.project,
     metadata,
     ...input.bundlePath === undefined ? {} : { bundlePath: input.bundlePath }
   });
   if (current !== null) {
-    return bootstrapReceipt(vault, input.project, metadata, current.artifactCount, input.bundlePath, "ALREADY_CURRENT");
+    return bootstrapReceipt(root, input.project, metadata, current.artifactCount, input.bundlePath, "ALREADY_CURRENT");
   }
-  const stageVault = mkdtempSync(join10(tmpdir(), "visual-note-bootstrap-"));
+  const stageRoot = mkdtempSync(join10(tmpdir(), "visual-note-bootstrap-"));
   try {
-    const base = join10(stageVault, "Engineering Atlas/10 Projects", input.project);
+    const base = join10(stageRoot, "Engineering Atlas/10 Projects", input.project);
     for (const relativePath of [
       "01 Architecture",
       "02 ADR",
@@ -8116,7 +8093,7 @@ function bootstrapProject(input) {
         const spec = parseVisualNoteSpec({ ...view.spec, source: metadata });
         specs.push(spec);
         bootstrapTransaction({
-          vault: stageVault,
+          root: stageRoot,
           project: input.project,
           spec,
           scene: sceneFromSpec(spec, "sample-bootstrap")
@@ -8132,86 +8109,12 @@ function bootstrapProject(input) {
       revision: refreshBase.revision + 1,
       title: `${refreshBase.title} (Refresh)`
     })));
-    writeProjectNotes(stageVault, input.project, metadata, specs, refreshBase.artifactId);
-    publishProjectDirectory(join10(stageVault, "Engineering Atlas/10 Projects", input.project), join10(vault, "Engineering Atlas/10 Projects", input.project));
-    return bootstrapReceipt(vault, input.project, metadata, specs.length, input.bundlePath, "CREATED");
+    writeProjectNotes(stageRoot, input.project, metadata, specs, refreshBase.artifactId);
+    publishProjectDirectory(join10(stageRoot, "Engineering Atlas/10 Projects", input.project), join10(root, "Engineering Atlas/10 Projects", input.project));
+    return bootstrapReceipt(root, input.project, metadata, specs.length, input.bundlePath, "CREATED");
   } finally {
-    rmSync4(stageVault, { recursive: true, force: true });
+    rmSync4(stageRoot, { recursive: true, force: true });
   }
-}
-
-// src/preflight.ts
-import { accessSync, constants, readFileSync as readFileSync11 } from "fs";
-import { join as join11 } from "path";
-var enabledPluginSchema = array(object({ id: string2(), version: string2() }).passthrough());
-var registrySchema = object({
-  vaults: record(string2(), object({ path: string2() }).passthrough())
-}).passthrough();
-var readinessSchema = object({
-  sentinel: literal("VISUAL_NOTE_EXCALIDRAW_READY"),
-  loaded: literal(true),
-  id: literal("obsidian-excalidraw-plugin"),
-  automatePresent: literal(true),
-  getAPI: literal(true),
-  scriptEnginePresent: literal(true)
-});
-function run2(cli, vault, command) {
-  const result = Bun.spawnSync([cli, `vault=${vault}`, ...command], {
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-  if (result.exitCode !== 0) {
-    throw new RuntimeError(result.stderr.toString().trim() || `Obsidian CLI exited ${result.exitCode}`);
-  }
-  return result.stdout.toString().trim();
-}
-function parseEval(stdout) {
-  const payload = stdout.startsWith("=> ") ? stdout.slice(3) : stdout;
-  try {
-    const first = JSON.parse(payload);
-    return typeof first === "string" ? JSON.parse(first) : first;
-  } catch (error) {
-    throw new RuntimeError("Obsidian eval returned malformed readiness output", { cause: error });
-  }
-}
-function preflight(cli, expectedVault) {
-  try {
-    accessSync(cli, constants.X_OK);
-  } catch (error) {
-    throw new RuntimeError(`Obsidian CLI is not executable: ${cli}`, { cause: error });
-  }
-  const home = process.env["HOME"];
-  if (home === undefined)
-    throw new RuntimeError("HOME is required to resolve the verified vault ID");
-  let registry;
-  try {
-    registry = registrySchema.parse(JSON.parse(readFileSync11(join11(home, "Library", "Application Support", "obsidian", "obsidian.json"), "utf8")));
-  } catch (error) {
-    throw new RuntimeError("cannot parse the supported Obsidian vault registry", { cause: error });
-  }
-  const registration = Object.entries(registry.vaults).find((entry) => entry[1].path === expectedVault);
-  if (registration === undefined)
-    throw new RuntimeError(`expected vault is not registered: ${expectedVault}`);
-  const verifiedVaultId = registration[0];
-  const observedVault = run2(cli, verifiedVaultId, ["vault", "info=path"]);
-  if (observedVault !== expectedVault)
-    throw new RuntimeError(`wrong vault: expected ${expectedVault}, observed ${observedVault}`);
-  const enabled = enabledPluginSchema.parse(JSON.parse(run2(cli, verifiedVaultId, ["plugins:enabled", "filter=community", "versions", "format=json"])));
-  const plugin = enabled.find((entry) => entry.id === "obsidian-excalidraw-plugin");
-  if (plugin === undefined)
-    throw new RuntimeError("official Excalidraw plugin is not enabled");
-  const code = "(()=>{const p=app.plugins.getPlugin('obsidian-excalidraw-plugin');const ea=window.ExcalidrawAutomate;return JSON.stringify({sentinel:'VISUAL_NOTE_EXCALIDRAW_READY',loaded:!!p,id:p?.manifest?.id,automatePresent:!!ea,getAPI:typeof ea?.getAPI==='function',scriptEnginePresent:!!p?.scriptEngine});})()";
-  const scriptEngine = readinessSchema.parse(parseEval(run2(cli, verifiedVaultId, ["eval", `code=${code}`])));
-  return {
-    schemaVersion: 1,
-    type: "VisualNotePreflightReceipt",
-    status: "READY",
-    expectedVault,
-    observedVault,
-    verifiedVaultId,
-    plugin: { id: "obsidian-excalidraw-plugin", version: plugin.version },
-    scriptEngine
-  };
 }
 
 // src/refresh.ts
@@ -8220,21 +8123,21 @@ import {
   lstatSync as lstatSync6,
   mkdirSync as mkdirSync7,
   openSync as openSync3,
-  readFileSync as readFileSync12,
+  readFileSync as readFileSync11,
   renameSync as renameSync3,
   unlinkSync as unlinkSync2,
   writeFileSync as writeFileSync6
 } from "fs";
-import { dirname as dirname8, join as join12 } from "path";
-function statePath(vault, project, artifactId) {
-  return join12(vault, artifactPaths(project, artifactId).drawingFolder, `${artifactId}.refresh-state.json`);
+import { dirname as dirname8, join as join11 } from "path";
+function statePath(root, project, artifactId) {
+  return join11(root, artifactPaths(project, artifactId).drawingFolder, `${artifactId}.refresh-state.json`);
 }
-function lockPath(vault, project, artifactId) {
-  return join12(vault, artifactPaths(project, artifactId).drawingFolder, `${artifactId}.refresh.lock`);
+function lockPath(root, project, artifactId) {
+  return join11(root, artifactPaths(project, artifactId).drawingFolder, `${artifactId}.refresh.lock`);
 }
 function readState2(path) {
   try {
-    const parsed = JSON.parse(readFileSync12(path, "utf8"));
+    const parsed = JSON.parse(readFileSync11(path, "utf8"));
     if (typeof parsed === "object" && parsed !== null && typeof parsed.currentToken === "string" && typeof parsed.lastIssued === "number") {
       return parsed;
     }
@@ -8248,11 +8151,11 @@ function writeAtomic(path, bytes) {
   renameSync3(temporary, path);
 }
 function refreshArtifact(input) {
-  if (!lstatSync6(input.vault).isDirectory())
-    throw new InputError("vault must be a directory");
+  if (!lstatSync6(input.root).isDirectory())
+    throw new InputError("root must be a directory");
   const paths = artifactPaths(input.project, input.spec.artifactId);
-  const drawingPath = join12(input.vault, paths.drawing);
-  const lock = lockPath(input.vault, input.project, input.spec.artifactId);
+  const drawingPath = join11(input.root, paths.drawing);
+  const lock = lockPath(input.root, input.project, input.spec.artifactId);
   let descriptor = -1;
   try {
     descriptor = openSync3(lock, "wx");
@@ -8260,16 +8163,16 @@ function refreshArtifact(input) {
     throw new ConflictError(`refresh conflict: ${input.spec.artifactId}`);
   }
   try {
-    const stateFile = statePath(input.vault, input.project, input.spec.artifactId);
+    const stateFile = statePath(input.root, input.project, input.spec.artifactId);
     const state = readState2(stateFile);
     if (state.currentToken !== input.expectedToken)
       throw new ConflictError(`refresh conflict: expected ${input.expectedToken}`);
-    const current = parseSceneMarkdown(readFileSync12(drawingPath, "utf8")).scene;
+    const current = parseSceneMarkdown(readFileSync11(drawingPath, "utf8")).scene;
     const { scene: finalScene, deprecatedAnchors } = applyRefreshToScene(current, input.spec);
     const nextToken = `cas-${state.lastIssued + 1}`;
     writeAtomic(drawingPath, encodeSceneToMarkdown(finalScene));
-    writeAtomic(join12(input.vault, paths.spec), jsonBytes(input.spec));
-    writeAtomic(join12(input.vault, paths.note), noteBytes(input.spec, paths.drawing, paths.svg, deprecatedAnchors));
+    writeAtomic(join11(input.root, paths.spec), jsonBytes(input.spec));
+    writeAtomic(join11(input.root, paths.note), noteBytes(input.spec, paths.drawing, paths.svg, deprecatedAnchors));
     writeAtomic(stateFile, `${JSON.stringify({ currentToken: nextToken, lastIssued: state.lastIssued + 1 }, null, 2)}
 `);
     return { operation: "refresh", token: nextToken, deprecatedAnchors };
@@ -8280,122 +8183,6 @@ function refreshArtifact(input) {
       unlinkSync2(lock);
     } catch {}
   }
-}
-
-// src/renderer-live.ts
-import { lstatSync as lstatSync7, readFileSync as readFileSync13 } from "fs";
-import { join as join13 } from "path";
-var PLUGIN_ID = "obsidian-excalidraw-plugin";
-var RENDERER_PATH = "Engineering Atlas/95 System/scripts/visual-note-renderer.md";
-var runtimeSchema = object({
-  status: literal("READY"),
-  plugin: object({ id: literal(PLUGIN_ID), version: string2() }),
-  scriptEngine: object({ automatePresent: literal(true), scriptEnginePresent: literal(true) }).passthrough()
-}).passthrough();
-var pluginSchema = object({
-  plugin: object({
-    id: literal(PLUGIN_ID),
-    version: string2(),
-    directory: string2(),
-    assets: array(object({ name: string2(), sha256: string2().regex(/^[0-9a-f]{64}$/) }))
-  })
-}).passthrough();
-var renderResultSchema = object({
-  schemaVersion: literal(1),
-  type: literal("VisualNoteScriptEngineRenderResult"),
-  drawingPath: string2(),
-  svgPath: string2(),
-  notePath: string2(),
-  specPath: string2(),
-  elementCount: number2().int().positive(),
-  elementIds: array(string2())
-});
-function run3(cli, vaultId, command) {
-  const result = Bun.spawnSync([cli, `vault=${vaultId}`, ...command], {
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-  const stdout = result.stdout.toString().trim();
-  const stderr = result.stderr.toString().trim();
-  if (result.exitCode !== 0 || stderr.includes("Error") || stdout.includes("Error:")) {
-    throw new RuntimeError(stderr || stdout || `Obsidian CLI exited ${result.exitCode}`);
-  }
-  return stdout;
-}
-function parseEval2(stdout) {
-  const payload = stdout.startsWith("=> ") ? stdout.slice(3) : stdout;
-  try {
-    const parsed = JSON.parse(payload);
-    return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
-  } catch (error) {
-    throw new RuntimeError("Obsidian eval returned malformed output", { cause: error });
-  }
-}
-function verifyPlugin(input) {
-  const runtime = runtimeSchema.parse(readJson(input.runtimeReceipt));
-  const receipt = pluginSchema.parse(readJson(input.pluginReceipt));
-  if (runtime.plugin.version !== receipt.plugin.version)
-    throw new RuntimeError("runtime and plugin receipts disagree on version");
-  for (const asset of receipt.plugin.assets) {
-    const source = join13(receipt.plugin.directory, asset.name);
-    const target = join13(input.vault, ".obsidian/plugins", PLUGIN_ID, asset.name);
-    if (sha256(readFileSync13(source)) !== asset.sha256 || sha256(readFileSync13(target)) !== asset.sha256)
-      throw new RuntimeError(`tampered plugin asset: ${asset.name}`);
-  }
-  const renderer = join13(input.vault, RENDERER_PATH);
-  const packaged = new URL("../assets/visual-note-renderer.md", import.meta.url).pathname;
-  if (sha256(readFileSync13(renderer)) !== sha256(readFileSync13(packaged)))
-    throw new RuntimeError("in-vault Script Engine renderer is missing or tampered");
-  return runtime.plugin.version;
-}
-function verifyTargetState(vault, output, specBytes, note) {
-  const files = [output.drawing, output.svg, output.note, output.spec];
-  const present = files.map((path) => Bun.file(join13(vault, path)).size > 0);
-  if (present.some(Boolean) && !present.every(Boolean))
-    throw new RuntimeError("stale partial renderer bundle");
-  if (present.every(Boolean)) {
-    if (readFileSync13(join13(vault, output.spec), "utf8") !== specBytes)
-      throw new RuntimeError("dirty target spec");
-    if (readFileSync13(join13(vault, output.note), "utf8") !== note)
-      throw new RuntimeError("dirty target companion note");
-    for (const path of files)
-      if (lstatSync7(join13(vault, path)).isSymbolicLink())
-        throw new RuntimeError("symlink target rejected");
-  }
-}
-function renderLive(input) {
-  if (process.env["VISUAL_NOTE_INJECT"] === "plugin-api-error")
-    throw new RuntimeError("injected plugin API failure");
-  const pluginVersion = verifyPlugin(input);
-  const output = artifactPaths(input.project, input.spec.artifactId);
-  const normalizedSpec = jsonBytes(input.spec);
-  const companion = noteBytes(input.spec, output.drawing, output.svg);
-  verifyTargetState(input.vault, output, normalizedSpec, companion);
-  const observed = run3(input.cli, input.verifiedVaultId, ["vault", "info=path"]);
-  if (observed !== input.vault)
-    throw new RuntimeError(`wrong vault: expected ${input.vault}, observed ${observed}`);
-  const readinessCode = `(()=>{const p=app.plugins.getPlugin('${PLUGIN_ID}');const ea=window.ExcalidrawAutomate;const f=app.vault.getAbstractFileByPath('${RENDERER_PATH}');return JSON.stringify({loaded:!!p,version:p?.manifest?.version,script:!!f,execute:typeof p?.scriptEngine?.executeScript==='function',create:typeof ea?.create==='function',svg:typeof ea?.createSVG==='function',copy:typeof ea?.copyViewElementsToEAforEditing==='function',commit:typeof ea?.addElementsToView==='function',custom:typeof ea?.addAppendUpdateCustomData==='function'});})()`;
-  const readiness = object({
-    loaded: literal(true),
-    version: literal(pluginVersion),
-    script: literal(true),
-    execute: literal(true),
-    create: literal(true),
-    svg: literal(true),
-    copy: literal(true),
-    commit: literal(true),
-    custom: literal(true)
-  }).parse(parseEval2(run3(input.cli, input.verifiedVaultId, ["eval", `code=${readinessCode}`])));
-  const request = {
-    schemaVersion: 1,
-    plan: planScene(input.spec),
-    paths: output,
-    specBytes: normalizedSpec,
-    noteBytes: companion
-  };
-  const executeCode = `(async()=>{const p=app.plugins.getPlugin('${PLUGIN_ID}');const sf=app.vault.getAbstractFileByPath('${RENDERER_PATH}');const df=app.vault.getAbstractFileByPath(${JSON.stringify(output.drawing)});let view=undefined;if(df){const leaf=app.workspace.getLeaf(false);await leaf.openFile(df);view=leaf.view;if(view?.file?.path!==${JSON.stringify(output.drawing)})throw new Error('VISUAL_NOTE_VIEW_MISMATCH');}globalThis.__visualNoteRenderRequest=${JSON.stringify(request)};const result=await p.scriptEngine.executeScript(view,await app.vault.read(sf),'visual-note-renderer',sf);const renderedFile=app.vault.getAbstractFileByPath(result.drawingPath);const leaf=app.workspace.getLeaf(false);await leaf.openFile(renderedFile);if(leaf.view?.file?.path!==result.drawingPath)throw new Error('VISUAL_NOTE_POST_RENDER_VIEW_MISMATCH');return JSON.stringify(result);})()`;
-  const result = renderResultSchema.parse(parseEval2(run3(input.cli, input.verifiedVaultId, ["eval", `code=${executeCode}`])));
-  return { ...result, pluginVersion };
 }
 
 // src/safe-path.ts
@@ -8435,8 +8222,8 @@ function safeMakeDirectories(root, relativePath) {
 
 // src/operations.ts
 var slugSchema = string2().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-function checkedVault(vault, expectedVault) {
-  return ensureMatchingVault(vault, expectedVault);
+function checkedRoot(root) {
+  return ensureRealDirectory(root, "root");
 }
 function projectBase(project) {
   return `Engineering Atlas/10 Projects/${slugSchema.parse(project)}`;
@@ -8447,7 +8234,7 @@ function validateSpec(path) {
   return { spec, sha256: sha256(bytes) };
 }
 function initializeProject(input) {
-  const vault = checkedVault(input.vault, input.expectedVault);
+  const root = checkedRoot(input.root);
   const source = ensureRealDirectory(input.source, "source");
   const base = projectBase(input.project);
   const directories = [
@@ -8464,10 +8251,10 @@ function initializeProject(input) {
     schemaVersion: 1,
     source: { root: source, commit: readSourceRevision(source) }
   };
-  safeMakeDirectories(vault, `${base}/_generated/specs`);
-  safeCreateFile(vault, `${base}/_generated/specs/source.json`, jsonBytes(metadata));
+  safeMakeDirectories(root, `${base}/_generated/specs`);
+  safeCreateFile(root, `${base}/_generated/specs/source.json`, jsonBytes(metadata));
   for (const directory of directories)
-    safeMakeDirectories(vault, `${base}/${directory}`);
+    safeMakeDirectories(root, `${base}/${directory}`);
   return { operation: "init", project: input.project, ...metadata };
 }
 function bootstrapSample(input) {
@@ -8476,36 +8263,17 @@ function bootstrapSample(input) {
 }
 function createSpec(input) {
   const validated = validateSpec(input.specPath);
-  const vault = checkedVault(input.vault, input.expectedVault);
+  const root = checkedRoot(input.root);
   const base = projectBase(input.project);
-  safeMakeDirectories(vault, `${base}/_generated/specs`);
+  safeMakeDirectories(root, `${base}/_generated/specs`);
   const relativePath = `${base}/_generated/specs/${validated.spec.artifactId}.json`;
-  safeCreateFile(vault, relativePath, jsonBytes(validated.spec));
+  safeCreateFile(root, relativePath, jsonBytes(validated.spec));
   return {
     operation: "create",
     artifactId: validated.spec.artifactId,
     revision: validated.spec.revision,
     relativePath,
     specSha256: validated.sha256
-  };
-}
-function createRenderedSpec(input) {
-  const validated = validateSpec(input.specPath);
-  const vault = checkedVault(input.vault, input.expectedVault);
-  projectBase(input.project);
-  return {
-    operation: "create",
-    artifactId: validated.spec.artifactId,
-    revision: validated.spec.revision,
-    ...renderLive({
-      cli: input.cli,
-      vault,
-      verifiedVaultId: input.verifiedVaultId,
-      project: input.project,
-      spec: validated.spec,
-      runtimeReceipt: input.runtimeReceipt,
-      pluginReceipt: input.pluginReceipt
-    })
   };
 }
 function inspectSpec(operation, specPath) {
@@ -8521,16 +8289,16 @@ function inspectSpec(operation, specPath) {
 }
 function refreshSpec(input) {
   const validated = validateSpec(input.specPath);
-  const vault = checkedVault(input.vault, input.expectedVault);
+  const root = checkedRoot(input.root);
   projectBase(input.project);
-  const txPaths = transactionPaths(vault, input.project, validated.spec.artifactId);
+  const txPaths = transactionPaths(root, input.project, validated.spec.artifactId);
   const result = existsSync8(txPaths.statePath) ? refreshTransaction({
-    vault,
+    root,
     project: input.project,
     spec: validated.spec,
     expectedToken: input.expectedToken
   }) : refreshArtifact({
-    vault,
+    root,
     project: input.project,
     spec: validated.spec,
     expectedToken: input.expectedToken
@@ -8538,13 +8306,13 @@ function refreshSpec(input) {
   return { artifactId: validated.spec.artifactId, revision: validated.spec.revision, ...result };
 }
 function restoreArtifact(input) {
-  const vault = checkedVault(input.vault, input.expectedVault);
+  const root = checkedRoot(input.root);
   projectBase(input.project);
   return {
     operation: "restore",
     artifactId: input.artifactId,
     ...restoreTransaction({
-      vault,
+      root,
       project: input.project,
       artifactId: input.artifactId,
       revisionToken: input.revisionToken,
@@ -8552,48 +8320,27 @@ function restoreArtifact(input) {
     })
   };
 }
-function openWorkingArtifact(cli, vault, expectedVault, project, artifactId) {
-  const checked = checkedVault(vault, expectedVault);
-  const opened = openTransaction(checked, project, artifactId);
-  return openVaultPath(cli, expectedVault, relative3(checked, opened.state.workingPath));
-}
-function openVaultPath(cli, expectedVault, path) {
-  if (isAbsolute6(path) || normalize5(path) !== path || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
-    throw new InputError("--path must be normalized and vault-relative");
-  }
-  preflight(cli, expectedVault);
-  const result = Bun.spawnSync([cli, `vault=${expectedVault}`, "open", `path=${path}`], {
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-  if (result.exitCode !== 0)
-    throw new RuntimeError(result.stderr.toString().trim() || `open exited ${result.exitCode}`);
-  return { operation: "open", path, opened: true };
-}
 
 // src/cli-spec.ts
 function runSpecCommand(command, argv) {
-  const allowed = command === "refresh" ? new Set(["--spec", "--vault", "--expected-vault", "--project", "--expected-token"]) : command === "restore" ? new Set([
+  const allowed = command === "refresh" ? new Set(["--spec", "--root", "--project", "--expected-token"]) : command === "restore" ? new Set([
     "--spec",
-    "--vault",
-    "--expected-vault",
+    "--root",
     "--project",
     "--artifact-id",
     "--revision-token",
     "--expected-token"
   ]) : new Set(["--spec"]);
   const options = parseOptions(argv, allowed);
-  const mutatingRefresh = command === "refresh" && optional2(options, "--vault") !== undefined && optional2(options, "--expected-vault") !== undefined && optional2(options, "--project") !== undefined && optional2(options, "--expected-token") !== undefined;
-  const mutatingRestore = command === "restore" && optional2(options, "--vault") !== undefined && optional2(options, "--expected-vault") !== undefined && optional2(options, "--project") !== undefined && optional2(options, "--artifact-id") !== undefined && optional2(options, "--revision-token") !== undefined && optional2(options, "--expected-token") !== undefined;
+  const mutatingRefresh = command === "refresh" && optional2(options, "--root") !== undefined && optional2(options, "--project") !== undefined && optional2(options, "--expected-token") !== undefined;
+  const mutatingRestore = command === "restore" && optional2(options, "--root") !== undefined && optional2(options, "--project") !== undefined && optional2(options, "--artifact-id") !== undefined && optional2(options, "--revision-token") !== undefined && optional2(options, "--expected-token") !== undefined;
   const result = mutatingRefresh ? refreshSpec({
-    vault: required2(options, "--vault"),
-    expectedVault: required2(options, "--expected-vault"),
+    root: required2(options, "--root"),
     project: required2(options, "--project"),
     specPath: required2(options, "--spec"),
     expectedToken: required2(options, "--expected-token")
   }) : mutatingRestore ? restoreArtifact({
-    vault: required2(options, "--vault"),
-    expectedVault: required2(options, "--expected-vault"),
+    root: required2(options, "--root"),
     project: required2(options, "--project"),
     artifactId: required2(options, "--artifact-id"),
     revisionToken: required2(options, "--revision-token"),
@@ -8603,7 +8350,7 @@ function runSpecCommand(command, argv) {
 }
 
 // src/interactive-authoring-schema.ts
-import { isAbsolute as isAbsolute7, normalize as normalize6 } from "path";
+import { isAbsolute as isAbsolute6, normalize as normalize5 } from "path";
 
 // src/interactive-authoring-validation.ts
 function addIssue(context, path, code, message) {
@@ -8870,7 +8617,7 @@ var fallbackPlacementSchema = _enum([
   "detached-callout"
 ]);
 var labelPlacementSchema = _enum(["auto-corridor", ...fallbackPlacementSchema.options]);
-var sourceRootSchema = string2().refine((value) => isAbsolute7(value) && normalize6(value) === value, "source root must be a normalized absolute path");
+var sourceRootSchema = string2().refine((value) => isAbsolute6(value) && normalize5(value) === value, "source root must be a normalized absolute path");
 var identifiedEvidenceReferenceSchema = evidenceReferenceSchema.safeExtend({
   id: identifierSchema
 });
@@ -9452,18 +9199,917 @@ function reviewLearningSpec(path) {
   };
 }
 
+// src/remote-client.ts
+import { lstatSync as lstatSync7, readFileSync as readFileSync13, realpathSync as realpathSync3 } from "fs";
+import { join as join13, resolve as resolve4 } from "path";
+
+// src/remote-payload.ts
+import { existsSync as existsSync9, readdirSync as readdirSync4, readFileSync as readFileSync12, realpathSync, statSync } from "fs";
+import { basename as basename3, join as join12, resolve as resolve2 } from "path";
+var slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+var manifestSchema = object({
+  artifacts: array(object({ artifactId: string2().regex(slug) }))
+});
+var leakPattern = /\/Users\/|\/home\/|\/private\/var\//;
+function isDirectory(path) {
+  return existsSync9(path) && statSync(path).isDirectory();
+}
+function readText(root, relativePath, label) {
+  const path = join12(root, relativePath);
+  if (!existsSync9(path))
+    throw new InputError(`missing ${label}: ${relativePath}`);
+  return readFileSync12(path, "utf8");
+}
+function exportSeriesLayout(root, project) {
+  const base = `docs/vl/projects/${project}`;
+  if (!existsSync9(join12(root, base, "manifest.json")))
+    return null;
+  let manifest;
+  try {
+    manifest = JSON.parse(readText(root, `${base}/manifest.json`, "manifest"));
+  } catch (error) {
+    throw new InputError(`malformed manifest JSON: ${base}/manifest.json`, { cause: error });
+  }
+  const parsed = manifestSchema.safeParse(manifest);
+  if (!parsed.success)
+    throw new InputError(`invalid manifest: ${base}/manifest.json`);
+  return {
+    name: "export-series",
+    artifactIds: parsed.data.artifacts.map((artifact) => artifact.artifactId),
+    files: (artifactId) => ({
+      spec: `${base}/specs/${artifactId}.json`,
+      drawing: `${base}/${artifactId}.excalidraw.md`
+    })
+  };
+}
+function transactionalLayout(root, project) {
+  const specFolder = join12(root, artifactPaths(project, "x").base, "_generated", "specs");
+  if (!isDirectory(specFolder))
+    return null;
+  const artifactIds = readdirSync4(specFolder, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name.slice(0, -".json".length)).filter((artifactId) => slug.test(artifactId)).sort();
+  return {
+    name: "transactional",
+    artifactIds,
+    files: (artifactId) => {
+      const paths = artifactPaths(project, artifactId);
+      return { spec: paths.spec, drawing: paths.drawing };
+    }
+  };
+}
+function detectLayout(root, project) {
+  const exported = exportSeriesLayout(root, project);
+  const transactional = transactionalLayout(root, project);
+  if (exported !== null && transactional !== null) {
+    throw new InputError(`project ${project} exists in both the export-series and transactional layouts; publish from a root with one`);
+  }
+  const layout = exported ?? transactional;
+  if (layout === null) {
+    throw new InputError(`no atlas layout for project ${project}: expected docs/vl/projects/${project}/manifest.json or ${artifactPaths(project, "x").base}/_generated/specs/`);
+  }
+  return layout;
+}
+function readSpec(root, relativePath, artifactId) {
+  let raw;
+  try {
+    raw = JSON.parse(readText(root, relativePath, "spec"));
+  } catch (error) {
+    if (error instanceof InputError)
+      throw error;
+    throw new InputError(`malformed spec JSON: ${relativePath}`, { cause: error });
+  }
+  let spec;
+  try {
+    spec = parseVisualNoteSpec(raw);
+  } catch (error) {
+    throw new InputError(`invalid spec: ${relativePath}`, { cause: error });
+  }
+  if (spec.artifactId !== artifactId) {
+    throw new InputError(`spec artifactId ${spec.artifactId} does not match ${relativePath}`);
+  }
+  return spec;
+}
+function readScene2(root, relativePath) {
+  const markdown = readText(root, relativePath, "drawing");
+  try {
+    return parseSceneMarkdown(markdown).scene;
+  } catch (error) {
+    const detail = error instanceof InputError ? error.detail : "malformed Excalidraw scene";
+    throw new InputError(`${detail}: ${relativePath}`, { cause: error });
+  }
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function scrubber(replacements) {
+  const rules = [...replacements.entries()].filter(([prefix]) => prefix.length > 1).sort(([left], [right]) => right.length - left.length);
+  if (rules.length === 0)
+    return (value) => value;
+  const lookup = new Map(rules);
+  const pattern = new RegExp(`(?:${rules.map(([prefix]) => escapeRegExp(prefix)).join("|")})(?![A-Za-z0-9._-])`, "g");
+  return (value) => value.replace(pattern, (prefix) => lookup.get(prefix) ?? prefix);
+}
+function childPath(path, key) {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`;
+}
+function scrubValue(value, path, scrub) {
+  if (typeof value === "string") {
+    const scrubbed = scrub(value);
+    const leak = leakPattern.exec(scrubbed);
+    if (leak !== null) {
+      throw new InputError(`absolute local path ${leak[0]} remains at ${path}`);
+    }
+    return scrubbed;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => scrubValue(item, `${path}[${index}]`, scrub));
+  }
+  if (typeof value === "object" && value !== null) {
+    const result = {};
+    for (const [key, item] of Object.entries(value)) {
+      const scrubbedKey = scrubValue(key, `${childPath(path, key)}<key>`, scrub);
+      result[String(scrubbedKey)] = scrubValue(item, childPath(path, key), scrub);
+    }
+    return result;
+  }
+  return value;
+}
+function buildPublishPayload(input) {
+  if (!slug.test(input.project))
+    throw new InputError(`invalid project slug: ${input.project}`);
+  const root = resolve2(input.root);
+  if (!isDirectory(root))
+    throw new InputError(`atlas root is not a directory: ${input.root}`);
+  const layout = detectLayout(root, input.project);
+  const wanted = input.artifacts;
+  if (wanted !== undefined) {
+    const unknown = wanted.filter((artifactId) => !layout.artifactIds.includes(artifactId));
+    if (unknown.length > 0) {
+      throw new InputError(`unknown artifact(s) in ${layout.name} layout: ${unknown.join(", ")}`);
+    }
+  }
+  const selected = layout.artifactIds.filter((artifactId) => wanted === undefined || wanted.includes(artifactId));
+  const figures = selected.map((artifactId) => {
+    const files = layout.files(artifactId);
+    return {
+      spec: readSpec(root, files.spec, artifactId),
+      scene: readScene2(root, files.drawing),
+      verify: []
+    };
+  });
+  const lead = figures[0]?.spec;
+  if (lead === undefined)
+    throw new InputError(`no artifacts selected for ${input.project}`);
+  const repoName = input.repoName ?? basename3(lead.source.root);
+  const replacements = new Map;
+  const home = process.env["HOME"];
+  if (home !== undefined)
+    replacements.set(resolve2(home), "~");
+  replacements.set(root, "~");
+  replacements.set(realpathSync(root), "~");
+  for (const figure of figures)
+    replacements.set(figure.spec.source.root, repoName);
+  const payload = {
+    projectId: input.project,
+    repoName,
+    commit: lead.source.commit,
+    figures
+  };
+  return scrubValue(payload, "$", scrubber(replacements));
+}
+
+// src/verify-record.ts
+import { existsSync as existsSync10, realpathSync as realpathSync2 } from "fs";
+import { dirname as dirname9, isAbsolute as isAbsolute7, relative as relative3, resolve as resolve3, sep as sep2 } from "path";
+var defaultTimeoutMs = 1e4;
+var defaultOutputLimitBytes = 16 * 1024;
+var truncatedMarker = "\u2026[truncated]";
+var shellSyntax = new Set(["|", "&", ";", "<", ">", "$", "`", "(", ")", "*"]);
+var sedPrintScript = /^\d+(,\d+)?p$/u;
+var searchOptions = {
+  "-n": "flag",
+  "-i": "flag",
+  "-F": "flag",
+  "-w": "flag",
+  "-l": "flag",
+  "-c": "flag",
+  "-e": "pattern"
+};
+var contextOptions = {
+  "-A": "number",
+  "-B": "number",
+  "-C": "number"
+};
+var commandOptions = {
+  rg: {
+    ...searchOptions,
+    ...contextOptions,
+    "-S": "flag",
+    "--smart-case": "flag",
+    "--count": "flag",
+    "-g": "text",
+    "--glob": "text",
+    "-t": "text",
+    "--type": "text",
+    "--no-heading": "flag",
+    "--hidden": "flag"
+  },
+  grep: { ...searchOptions, ...contextOptions, "-E": "flag", "-h": "flag", "-H": "flag" },
+  cat: {},
+  head: { "-n": "number" },
+  tail: { "-n": "number" },
+  wc: { "-l": "flag", "-w": "flag", "-c": "flag" },
+  ls: { "-l": "flag", "-a": "flag", "-1": "flag" }
+};
+var gitOptions = {
+  show: { "--stat": "flag", "--name-only": "flag", "--format": "format" },
+  log: { "-n": "number", "--oneline": "flag", "--format": "format", "--stat": "flag" },
+  "ls-files": {},
+  "rev-parse": { "--verify": "flag", "--short": "flag" },
+  blame: { "-L": "lines" },
+  diff: { "--stat": "flag", "--name-only": "flag" },
+  grep: searchOptions
+};
+function tokenize(command) {
+  if (command.includes("\x00"))
+    return { status: "rejected", reason: "unparseable" };
+  const argv = [];
+  let token = "";
+  let tokenStarted = false;
+  let quote = null;
+  for (const character of command) {
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+      } else {
+        token += character;
+      }
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      tokenStarted = true;
+      continue;
+    }
+    if (shellSyntax.has(character)) {
+      return { status: "rejected", reason: "shell syntax" };
+    }
+    if (/\s/u.test(character)) {
+      if (tokenStarted) {
+        argv.push(token);
+        token = "";
+        tokenStarted = false;
+      }
+      continue;
+    }
+    token += character;
+    tokenStarted = true;
+  }
+  if (quote !== null)
+    return { status: "rejected", reason: "unparseable" };
+  if (tokenStarted)
+    argv.push(token);
+  return { status: "ok", argv };
+}
+function validOptionValue(kind, value) {
+  if (kind === "number")
+    return /^\d+$/u.test(value);
+  if (kind === "lines")
+    return /^\d+,\d+$/u.test(value);
+  if (kind === "format")
+    return !/%[G(]/u.test(value);
+  return true;
+}
+function parseOptions2(args, allowlist) {
+  const operands = [];
+  let afterSeparator = false;
+  let hasPattern = false;
+  for (let index = 0;index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined)
+      return null;
+    if (!afterSeparator && argument === "--") {
+      afterSeparator = true;
+      continue;
+    }
+    if (afterSeparator || !argument.startsWith("-") || argument === "-") {
+      operands.push({ value: argument, afterSeparator });
+      continue;
+    }
+    const long = argument.startsWith("--");
+    const equals = argument.indexOf("=");
+    const names = long ? [equals === -1 ? argument : argument.slice(0, equals)] : [...argument.slice(1)].map((character) => `-${character}`);
+    for (const [offset, name] of names.entries()) {
+      const kind = Object.hasOwn(allowlist, name) ? allowlist[name] : undefined;
+      if (kind === undefined)
+        return null;
+      if (kind === "flag") {
+        if (long && equals !== -1)
+          return null;
+        continue;
+      }
+      const attached = long ? equals === -1 ? undefined : argument.slice(equals + 1) : offset + 2 < argument.length ? argument.slice(offset + 2) : undefined;
+      if (kind === "format" && attached === undefined)
+        return null;
+      const value = attached ?? args[++index];
+      if (value === undefined || !validOptionValue(kind, value))
+        return null;
+      if (kind === "pattern")
+        hasPattern = true;
+      break;
+    }
+  }
+  return { operands, hasPattern };
+}
+function isRevision(value) {
+  return /^[A-Za-z0-9_][A-Za-z0-9_./-]*(?:[~^]\d*)*$/u.test(value) && !value.includes("..");
+}
+function commandPaths(argv) {
+  const executable = argv[0] ?? "";
+  if (executable === "sed") {
+    if (argv[1] !== "-n" || !sedPrintScript.test(argv[2] ?? "") || argv.slice(3).some((argument) => argument.startsWith("-"))) {
+      return { reason: "option not allowlisted" };
+    }
+    return { paths: argv.slice(3) };
+  }
+  const subcommand = argv[1] ?? "";
+  const table = executable === "git" ? gitOptions : commandOptions;
+  const key = executable === "git" ? subcommand : executable;
+  if (!Object.hasOwn(table, key)) {
+    return {
+      reason: executable === "git" && subcommand.startsWith("-") ? "option not allowlisted" : "not allowlisted"
+    };
+  }
+  const parsed = parseOptions2(argv.slice(executable === "git" ? 2 : 1), table[key] ?? {});
+  if (parsed === null)
+    return { reason: "option not allowlisted" };
+  if (executable === "rg" || executable === "grep" || executable === "git" && subcommand === "grep") {
+    return { paths: parsed.operands.slice(parsed.hasPattern ? 0 : 1).map(({ value }) => value) };
+  }
+  if (executable !== "git")
+    return { paths: parsed.operands.map(({ value }) => value) };
+  const paths = [];
+  for (const { value, afterSeparator } of parsed.operands) {
+    if (afterSeparator || subcommand === "ls-files") {
+      paths.push(value);
+    } else if (subcommand === "show") {
+      const colon = value.indexOf(":");
+      if (!isRevision(colon === -1 ? value : value.slice(0, colon))) {
+        return { reason: "not allowlisted" };
+      }
+      if (colon !== -1)
+        paths.push(value.slice(colon + 1));
+    } else if (subcommand === "rev-parse") {
+      if (!isRevision(value))
+        return { reason: "not allowlisted" };
+    } else if (subcommand === "diff") {
+      const revisions = value.split("..");
+      if (revisions.length !== 2 || !revisions.every(isRevision)) {
+        return { reason: "not allowlisted" };
+      }
+    } else {
+      return { reason: "not allowlisted" };
+    }
+  }
+  return { paths };
+}
+function realpathOrNearestExistingParent(path) {
+  let current = path;
+  while (!existsSync10(current)) {
+    const parent = dirname9(current);
+    if (parent === current)
+      return null;
+    current = parent;
+  }
+  try {
+    return realpathSync2(current);
+  } catch {
+    return null;
+  }
+}
+function isWithinRoot(path, realRoot) {
+  const fromRoot = relative3(realRoot, path);
+  return fromRoot === "" || fromRoot !== ".." && !fromRoot.startsWith(`..${sep2}`) && !isAbsolute7(fromRoot);
+}
+function isConfinedPath(argument, realRoot) {
+  if (argument.startsWith("/") || argument.startsWith("~") || argument.startsWith("$") || argument.split("/").includes("..")) {
+    return false;
+  }
+  const canonical = realpathOrNearestExistingParent(resolve3(realRoot, argument));
+  return canonical !== null && isWithinRoot(canonical, realRoot);
+}
+async function capture(stream, outputLimitBytes) {
+  const reader = stream.getReader();
+  const chunks = [];
+  let retainedBytes = 0;
+  let totalBytes = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done)
+      break;
+    totalBytes += result.value.byteLength;
+    if (retainedBytes >= outputLimitBytes)
+      continue;
+    const remaining = outputLimitBytes - retainedBytes;
+    const retained = result.value.subarray(0, remaining);
+    chunks.push(retained);
+    retainedBytes += retained.byteLength;
+  }
+  const bytes = new Uint8Array(retainedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const output = new TextDecoder().decode(bytes);
+  return totalBytes > outputLimitBytes ? `${output}${truncatedMarker}` : output;
+}
+async function run2(argv, repoRoot, timeoutMs, outputLimitBytes, gitOverrides = []) {
+  const git = argv[0] === "git";
+  const subcommand = argv[1] ?? "";
+  const child = Bun.spawn(git ? [
+    "git",
+    "--no-pager",
+    "--no-optional-locks",
+    "--no-lazy-fetch",
+    "--literal-pathspecs",
+    `--work-tree=${repoRoot}`,
+    "-c",
+    "core.pager=cat",
+    "-c",
+    "core.fsmonitor=",
+    "-c",
+    "diff.external=",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "log.showSignature=false",
+    "-c",
+    "format.pretty=medium",
+    "-c",
+    "diff.orderFile=/dev/null",
+    "-c",
+    "diff.submodule=short",
+    "-c",
+    "diff.autoRefreshIndex=false",
+    "-c",
+    "core.attributesFile=/dev/null",
+    "-c",
+    "core.excludesFile=/dev/null",
+    "-c",
+    "mailmap.file=/dev/null",
+    "-c",
+    "blame.ignoreRevsFile=",
+    ...gitOverrides,
+    subcommand,
+    ...["show", "log", "diff"].includes(subcommand) ? ["--no-ext-diff", "--no-textconv"] : [],
+    ...["blame", "grep"].includes(subcommand) ? ["--no-textconv"] : [],
+    ...argv.slice(2).map((argument, index) => {
+      const separator = argv.indexOf("--", 2);
+      if (!["show", "log"].includes(subcommand) || separator !== -1 && index + 2 > separator || !argument.startsWith("--format="))
+        return argument;
+      const format = argument.slice("--format=".length);
+      return /^(?:tformat|format):/u.test(format) ? argument : `--format=tformat:${format}`;
+    })
+  ] : [...argv], {
+    cwd: repoRoot,
+    env: {
+      PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+      ...git ? {
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_PAGER: "cat",
+        PAGER: "cat"
+      } : {}
+    },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill(9);
+  }, timeoutMs);
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      capture(child.stdout, outputLimitBytes),
+      capture(child.stderr, outputLimitBytes)
+    ]);
+    return {
+      exitCode: timedOut ? null : exitCode,
+      stdout,
+      stderr,
+      reason: timedOut ? "timeout" : null
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function recordVerify(spec, repoRoot, options = {}) {
+  const checkedRoot = ensureRealDirectory(repoRoot, "repo root");
+  const realRoot = realpathSync2(checkedRoot);
+  const filters = await run2([
+    "git",
+    "config",
+    "--null",
+    "--name-only",
+    "--get-regexp",
+    "^filter\\..*\\.(clean|smudge|process|required)$"
+  ], realRoot, defaultTimeoutMs, defaultOutputLimitBytes);
+  const filterKeys = filters.stdout.split("\x00").filter(Boolean);
+  const gitOverrides = filterKeys.flatMap((key) => [
+    "-c",
+    `${key}=${key.endsWith(".required") ? "false" : ""}`
+  ]);
+  const filtersChecked = (filters.exitCode === 0 || filters.exitCode === 1) && !filters.stdout.endsWith(truncatedMarker) && filterKeys.every((key) => /^filter\.[^=\n]+\.(clean|smudge|process|required)$/u.test(key));
+  const revision = await run2(["git", "rev-parse", "--verify", "HEAD"], realRoot, defaultTimeoutMs, 128);
+  const commit = revision.exitCode === 0 && /^[0-9a-f]{40,64}\n?$/u.test(revision.stdout) ? revision.stdout.trim() : null;
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs;
+  const outputLimitBytes = options.outputLimitBytes ?? defaultOutputLimitBytes;
+  const steps = spec.learning?.verify ?? [];
+  const records = [];
+  for (const [index, step] of steps.entries()) {
+    const common = {
+      index,
+      semanticId: String(step.semanticId),
+      how: step.how,
+      commit,
+      ranAt: new Date().toISOString()
+    };
+    if (step.command === undefined) {
+      records.push({
+        ...common,
+        command: null,
+        status: "not-run",
+        reason: "no command",
+        exitCode: null,
+        stdout: "",
+        stderr: ""
+      });
+      continue;
+    }
+    const tokenized = tokenize(step.command);
+    if (tokenized.status === "rejected") {
+      records.push({
+        ...common,
+        command: step.command,
+        status: "not-run",
+        reason: tokenized.reason,
+        exitCode: null,
+        stdout: "",
+        stderr: ""
+      });
+      continue;
+    }
+    const checked = commandPaths(tokenized.argv);
+    if ("reason" in checked) {
+      records.push({
+        ...common,
+        command: step.command,
+        status: "not-run",
+        reason: checked.reason,
+        exitCode: null,
+        stdout: "",
+        stderr: ""
+      });
+      continue;
+    }
+    if (tokenized.argv[0] === "git" && !filtersChecked) {
+      records.push({
+        ...common,
+        command: step.command,
+        status: "not-run",
+        reason: "not allowlisted",
+        exitCode: null,
+        stdout: "",
+        stderr: ""
+      });
+      continue;
+    }
+    if (!checked.paths.every((path) => isConfinedPath(path, realRoot))) {
+      records.push({
+        ...common,
+        command: step.command,
+        status: "not-run",
+        reason: "path outside repo",
+        exitCode: null,
+        stdout: "",
+        stderr: ""
+      });
+      continue;
+    }
+    records.push({
+      ...common,
+      command: step.command,
+      status: "ran",
+      ...await run2(tokenized.argv, realRoot, timeoutMs, outputLimitBytes, gitOverrides)
+    });
+  }
+  return records;
+}
+
+// src/remote-client.ts
+var defaultRemote = "https://atlas.iyendev.com";
+var slug2 = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+var leakPattern2 = /\/Users\/|\/home\/|\/private\/var\//;
+var localHosts = new Set(["127.0.0.1", "localhost"]);
+var requestTimeoutMs = 60000;
+var credentialsSchema = object({
+  clientId: string2().min(1),
+  clientSecret: string2().min(1)
+});
+var publishResponseSchema = object({
+  results: array(object({
+    artifactId: string2(),
+    outcome: _enum(["created", "refreshed", "conflict"]),
+    token: string2(),
+    deprecatedAnchors: array(string2()),
+    orphanedNotes: array(string2())
+  }))
+});
+var exportResponseSchema = object({
+  figures: array(object({
+    artifactId: string2().regex(slug2),
+    spec: record(string2(), unknown()),
+    scene: looseObject({ elements: array(unknown()) }),
+    notes: array(unknown()),
+    verify: array(unknown())
+  }))
+});
+function parseRemote(remote) {
+  let url;
+  try {
+    url = new URL(remote);
+  } catch {
+    throw new InputError(`invalid --remote URL: ${remote}`);
+  }
+  if (url.username !== "" || url.password !== "") {
+    throw new InputError("--remote must not embed credentials");
+  }
+  const local = localHosts.has(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+    throw new InputError("--remote must use https unless the host is 127.0.0.1 or localhost");
+  }
+  return url;
+}
+function loadCredentials(env) {
+  const clientId = env["VISUAL_ATLAS_CLIENT_ID"];
+  const clientSecret = env["VISUAL_ATLAS_CLIENT_SECRET"];
+  if (clientId && clientSecret)
+    return { clientId, clientSecret };
+  if (clientId || clientSecret) {
+    throw new InputError("set both VISUAL_ATLAS_CLIENT_ID and VISUAL_ATLAS_CLIENT_SECRET, or neither");
+  }
+  const home = env["HOME"];
+  if (!home)
+    throw new InputError("HOME is not set; cannot locate the credentials file");
+  const path = join13(home, ".config", "visual-atlas", "credentials.json");
+  let status;
+  try {
+    status = lstatSync7(path);
+  } catch {
+    throw new InputError(`no publish credentials: set VISUAL_ATLAS_CLIENT_ID and VISUAL_ATLAS_CLIENT_SECRET or create ${path} (mode 0600)`);
+  }
+  if (!status.isFile())
+    throw new InputError(`credentials file must be a regular file: ${path}`);
+  const mode = status.mode & 511;
+  if (mode !== 384) {
+    throw new InputError(`credentials file must have mode 0600, found 0${mode.toString(8)}: ${path}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync13(path, "utf8"));
+  } catch {
+    throw new InputError(`malformed credentials JSON: ${path}`);
+  }
+  const credentials = credentialsSchema.safeParse(parsed);
+  if (!credentials.success) {
+    throw new InputError(`credentials file needs string clientId and clientSecret: ${path}`);
+  }
+  return credentials.data;
+}
+function accessHeaders(remote, credentials, env) {
+  const headers = {
+    "CF-Access-Client-Id": credentials.clientId,
+    "CF-Access-Client-Secret": credentials.clientSecret
+  };
+  const devJwt = env["VISUAL_ATLAS_DEV_JWT"];
+  if (localHosts.has(remote.hostname) && devJwt)
+    headers["Cf-Access-Jwt-Assertion"] = devJwt;
+  return headers;
+}
+function redact(message, credentials) {
+  return message.split(credentials.clientSecret).join("[redacted]").slice(0, 500);
+}
+function remoteErrorDetail(text) {
+  try {
+    const body = JSON.parse(text);
+    const error = object({ error: object({ code: string2(), message: string2() }) }).safeParse(body);
+    if (error.success)
+      return `${error.data.error.code}: ${error.data.error.message}`;
+  } catch {}
+  return "unexpected response";
+}
+async function request(remote, path, credentials, env, body) {
+  const url = new URL(path, remote);
+  const method = body === undefined ? "GET" : "POST";
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: {
+        ...accessHeaders(remote, credentials, env),
+        ...body === undefined ? {} : { "Content-Type": "application/json" }
+      },
+      ...body === undefined ? {} : { body },
+      redirect: "manual",
+      signal: AbortSignal.timeout(requestTimeoutMs)
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    throw new RuntimeError(timedOut ? `remote ${remote.origin} did not answer within ${requestTimeoutMs / 1000}s` : `cannot reach remote ${remote.origin}`);
+  }
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel();
+    let host = "";
+    try {
+      host = new URL(response.headers.get("location") ?? "", url).hostname;
+    } catch {}
+    if (host === "cloudflareaccess.com" || host.endsWith(".cloudflareaccess.com")) {
+      throw new RuntimeError("remote requires Access authentication; check service token");
+    }
+    throw new RuntimeError(`remote answered ${method} ${path} with redirect ${response.status}; not following`);
+  }
+  const text = await response.text();
+  if (!response.ok) {
+    throw new RuntimeError(redact(`remote ${method} ${path} failed with ${response.status}: ${remoteErrorDetail(text)}`, credentials));
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new RuntimeError(`remote ${method} ${path} returned invalid JSON`);
+  }
+}
+function escapeRegExp2(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function scrubVerify(value, path, replacements) {
+  const rules = [...replacements.keys()].filter((prefix) => prefix.length > 1).sort((left, right) => right.length - left.length);
+  const pattern = rules.length === 0 ? null : new RegExp(`(?:${rules.map(escapeRegExp2).join("|")})(?![A-Za-z0-9._-])`, "g");
+  const scrub = (text, at) => {
+    const scrubbed = pattern === null ? text : text.replace(pattern, (prefix) => replacements.get(prefix) ?? prefix);
+    const leak = leakPattern2.exec(scrubbed);
+    if (leak !== null)
+      throw new InputError(`absolute local path ${leak[0]} remains at ${at}`);
+    return scrubbed;
+  };
+  const walk = (item, at) => {
+    if (typeof item === "string")
+      return scrub(item, at);
+    if (Array.isArray(item))
+      return item.map((entry, index) => walk(entry, `${at}[${index}]`));
+    if (typeof item === "object" && item !== null) {
+      return Object.fromEntries(Object.entries(item).map(([key, entry]) => [
+        scrub(key, `${at}.${key}<key>`),
+        walk(entry, `${at}.${key}`)
+      ]));
+    }
+    return item;
+  };
+  return walk(value, path);
+}
+function notRunVerify(spec) {
+  const ranAt = new Date().toISOString();
+  return (spec.learning?.verify ?? []).map((step, index) => ({
+    index,
+    semanticId: String(step.semanticId),
+    how: step.how,
+    command: step.command ?? null,
+    status: "not-run",
+    reason: "repo not provided",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    commit: null,
+    ranAt
+  }));
+}
+function realpathOrSelf(path) {
+  try {
+    return realpathSync3(path);
+  } catch {
+    return path;
+  }
+}
+async function attachVerify(payload, input) {
+  const replacements = new Map;
+  for (const home of [process.env["HOME"], input.env["HOME"]]) {
+    if (home)
+      replacements.set(resolve4(home), "~");
+  }
+  const root = resolve4(input.root);
+  replacements.set(root, "~");
+  replacements.set(realpathOrSelf(root), "~");
+  if (input.repoRoot !== undefined) {
+    replacements.set(input.repoRoot, payload.repoName);
+    replacements.set(realpathOrSelf(input.repoRoot), payload.repoName);
+  }
+  const figures = [];
+  for (const [index, figure] of payload.figures.entries()) {
+    const verify = input.repoRoot === undefined ? notRunVerify(figure.spec) : await recordVerify(figure.spec, input.repoRoot);
+    figures.push({
+      ...figure,
+      verify: scrubVerify(verify, `$.figures[${index}].verify`, replacements)
+    });
+  }
+  return { ...payload, figures };
+}
+async function publish(input) {
+  const remote = parseRemote(input.remote);
+  const credentials = loadCredentials(input.env);
+  const payload = await attachVerify(buildPublishPayload({
+    root: input.root,
+    project: input.project,
+    ...input.artifacts === undefined ? {} : { artifacts: input.artifacts }
+  }), {
+    root: input.root,
+    env: input.env,
+    ...input.repoRoot === undefined ? {} : { repoRoot: input.repoRoot }
+  });
+  const response = publishResponseSchema.safeParse(await request(remote, "/api/publish", credentials, input.env, JSON.stringify(payload)));
+  if (!response.success)
+    throw new RuntimeError("remote returned an unexpected publish response");
+  return { projectId: payload.projectId, results: response.data.results };
+}
+function existingBytes(out, relativePath) {
+  const path = join13(out, relativePath);
+  let status;
+  try {
+    status = lstatSync7(path);
+  } catch {
+    return null;
+  }
+  if (!status.isFile())
+    throw new CollisionError(relativePath);
+  return readFileSync13(path, "utf8");
+}
+async function pull(input) {
+  if (!slug2.test(input.project))
+    throw new InputError(`invalid project slug: ${input.project}`);
+  const out = ensureRealDirectory(input.out, "--out");
+  const remote = parseRemote(input.remote);
+  const credentials = loadCredentials(input.env);
+  const response = exportResponseSchema.safeParse(await request(remote, `/api/projects/${input.project}/export`, credentials, input.env));
+  if (!response.success)
+    throw new RuntimeError("remote returned an unexpected export response");
+  const project = input.project;
+  const seen = new Set;
+  const files = [];
+  for (const figure of response.data.figures) {
+    const id = figure.artifactId;
+    if (seen.has(id))
+      throw new RuntimeError(`remote export repeats artifact ${id}`);
+    seen.add(id);
+    files.push({
+      path: `${project}/${id}.excalidraw.md`,
+      bytes: encodeSceneToMarkdown(figure.scene)
+    }, { path: `${project}/specs/${id}.json`, bytes: jsonBytes(figure.spec) }, { path: `${project}/notes/${id}.json`, bytes: jsonBytes(figure.notes) }, { path: `${project}/verify/${id}.json`, bytes: jsonBytes(figure.verify) });
+  }
+  for (const folder of ["specs", "notes", "verify"])
+    safeMakeDirectories(out, `${project}/${folder}`);
+  const written = [];
+  const unchanged = [];
+  for (const file of files) {
+    const current = existingBytes(out, file.path);
+    if (current === null)
+      written.push(file.path);
+    else if (current === file.bytes)
+      unchanged.push(file.path);
+    else
+      throw new CollisionError(file.path);
+  }
+  for (const file of files) {
+    if (written.includes(file.path))
+      safeCreateFile(out, file.path, file.bytes);
+  }
+  return { project, figures: seen.size, written, unchanged };
+}
+
 // src/session-export.ts
 import {
   lstatSync as lstatSync8,
   mkdirSync as mkdirSync8,
   mkdtempSync as mkdtempSync2,
-  readdirSync as readdirSync4,
+  readdirSync as readdirSync5,
   readFileSync as readFileSync14,
-  realpathSync,
+  realpathSync as realpathSync4,
   rmSync as rmSync5,
   writeFileSync as writeFileSync7
 } from "fs";
-import { dirname as dirname9, isAbsolute as isAbsolute8, join as join14, normalize as normalize7 } from "path";
+import { dirname as dirname10, isAbsolute as isAbsolute8, join as join14, normalize as normalize6 } from "path";
 
 // src/learning-note.ts
 var statusText = {
@@ -9706,16 +10352,19 @@ function shapeMarkup(type, x, y, width, height, palette, dashArray, isFrame) {
 function styleMap(styles) {
   return new Map(styles.map((style) => [style.semanticId, style]));
 }
-function sceneSize(view) {
-  const plan = planScene(view.spec);
+function sceneSize(plan) {
   return {
     width: Math.max(...plan.elements.map((element) => element.x + element.width), 0) + CARD_PADDING,
     height: Math.max(...plan.elements.map((element) => element.y + element.height), 0) + CARD_PADDING
   };
 }
-function routeBadges(view, originX, originY) {
+function plannedView(view) {
+  const plan = planScene(view.spec);
+  return { view, plan, size: sceneSize(plan) };
+}
+function routeBadges(view, plan, originX, originY) {
   const route = view.spec.learning?.route ?? [];
-  const shapes = new Map(planScene(view.spec).elements.filter((element) => element.role === "node-shape").map((element) => [element.semanticId, element]));
+  const shapes = new Map(plan.elements.filter((element) => element.role === "node-shape").map((element) => [element.semanticId, element]));
   return route.map((step, index) => {
     const shape = shapes.get(step.semanticId);
     if (shape === undefined)
@@ -9725,10 +10374,9 @@ function routeBadges(view, originX, originY) {
     return `<g data-route-step="${index + 1}"><circle cx="${cx}" cy="${cy}" r="15" fill="#0f172a" stroke="#ffffff" stroke-width="3"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="ui-sans-serif, sans-serif" font-size="14" font-weight="700" fill="#ffffff">${index + 1}</text></g>`;
   }).join("");
 }
-function renderCard(view, originX, originY) {
-  const plan = planScene(view.spec);
+function renderCard(planned, originX, originY) {
+  const { view, plan, size } = planned;
   const styles = styleMap(view.styles);
-  const size = sceneSize(view);
   const pieces = [
     `<rect x="${originX}" y="${originY}" width="${size.width + CARD_PADDING}" height="${size.height + CAPTION_HEIGHT}" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>`,
     `<text x="${originX + 24}" y="${originY + 29}" font-family="ui-sans-serif, sans-serif" font-size="12" font-weight="700" fill="#64748b">${escapeXml(`${view.kind} \xB7 ${view.viewId}`)}</text>`
@@ -9769,7 +10417,7 @@ function renderCard(view, originX, originY) {
     const textY = centered ? y + (element.height - lines * lineHeight) / 2 + fontSize : y + fontSize;
     pieces.push(`<text x="${textX}" y="${textY}" text-anchor="${centered ? "middle" : "start"}" font-family="Virgil, 'Comic Sans MS', ui-rounded, sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${palette.text}">${textLines(element.text, textX, fontSize, palette.text)}</text>`);
   }
-  pieces.push(routeBadges(view, originX, originY));
+  pieces.push(routeBadges(view, plan, originX, originY));
   return pieces.join("");
 }
 function svgDocument(width, height, content) {
@@ -9788,13 +10436,14 @@ function svgDocument(width, height, content) {
 </svg>`;
 }
 function renderViewSvg(view) {
-  const size = sceneSize(view);
+  const planned = plannedView(view);
+  const { size } = planned;
   const width = size.width + CARD_PADDING * 3;
   const height = size.height + CAPTION_HEIGHT + CARD_PADDING * 3;
   return {
     width,
     height,
-    svg: svgDocument(width, height, renderCard(view, CARD_PADDING, CARD_PADDING))
+    svg: svgDocument(width, height, renderCard(planned, CARD_PADDING, CARD_PADDING))
   };
 }
 
@@ -9813,12 +10462,12 @@ var kindOrder = new Map([
   ["code-exploration", 9]
 ]);
 function realDirectory(path, label) {
-  if (!isAbsolute8(path) || normalize7(path) !== path || path === "/") {
+  if (!isAbsolute8(path) || normalize6(path) !== path || path === "/") {
     throw new InputError(`${label} must be a normalized absolute non-root path`);
   }
   let resolved;
   try {
-    resolved = realpathSync(path);
+    resolved = realpathSync4(path);
   } catch (error) {
     throw new InputError(`${label} does not exist: ${path}`, { cause: error });
   }
@@ -9827,7 +10476,7 @@ function realDirectory(path, label) {
   return resolved;
 }
 function readSpecs(specDirectory) {
-  const specs = readdirSync4(specDirectory, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "source.json").map((entry) => {
+  const specs = readdirSync5(specDirectory, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "source.json").map((entry) => {
     const path = join14(specDirectory, entry.name);
     const spec = parseVisualNoteSpec(JSON.parse(readFileSync14(path, "utf8")));
     if (`${spec.artifactId}.json` !== entry.name) {
@@ -9942,7 +10591,7 @@ function exportSeries(input) {
   const files = [];
   const write = (relativePath, bytes) => {
     const path = join14(stageProject, relativePath);
-    mkdirSync8(dirname9(path), { recursive: true });
+    mkdirSync8(dirname10(path), { recursive: true });
     writeFileSync7(path, bytes);
     files.push(relativePath);
   };
@@ -9985,13 +10634,10 @@ function exportSeries(input) {
 }
 
 // src/cli.ts
-var officialCli = "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli";
-var evidenceRoot = join15(process.cwd(), ".omo/evidence/agent-visual-learning-vault");
 var help = `visual-note 0.1.0
 Usage: visual-note <command> [options]
 
 Commands:
-  preflight  verify the exact vault and live official Excalidraw runtime
   init       initialize project metadata from a read-only local source
   bootstrap  stage a repeatable study-workflow sample bundle for a source
   create     validate and publish a new normalized visual-note spec
@@ -10002,33 +10648,94 @@ Commands:
   authoring-schema  emit the renderer-independent interactive authoring JSON Schema
   compile-authoring validate and compile before/after authoring JSON for a web renderer
   review-learning check a spec's learning layer against research-backed figure rules
-  open       open a vault-relative artifact through the official CLI
   restore    validate a restore spec contract without mutation
   contract   emit the deterministic cross-agent contract sentinel
+  publish    upload a project to the private hosted atlas
+             --root <abs> --project <slug> [--artifact <id>]... [--repo-root <abs>] [--remote <url>]
+  pull       download a project from the hosted atlas without overwriting local changes
+             --project <slug> --out <abs-dir> [--remote <url>]
+
+publish/pull read CF-Access-Client-Id/Secret from VISUAL_ATLAS_CLIENT_ID and
+VISUAL_ATLAS_CLIENT_SECRET or ~/.config/visual-atlas/credentials.json (mode 0600).
+The default remote is ${defaultRemote}.
 `;
-function run4(command, argv) {
+function takeRepeated(argv, flag) {
+  const values = [];
+  const rest = [];
+  for (let index = 0;index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === undefined)
+      continue;
+    if (argument !== flag) {
+      rest.push(argument);
+      continue;
+    }
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith("--"))
+      throw new InputError(`${flag} requires a value`);
+    values.push(value);
+    index += 1;
+  }
+  return [values, rest];
+}
+async function runPublish(argv) {
+  const [artifacts, rest] = takeRepeated(argv, "--artifact");
+  const options = parseOptions(rest, new Set(["--root", "--project", "--repo-root", "--remote"]));
+  const repoRoot = optional2(options, "--repo-root");
+  const result = await publish({
+    root: required2(options, "--root"),
+    project: required2(options, "--project"),
+    remote: optional2(options, "--remote") ?? defaultRemote,
+    env: process.env,
+    ...artifacts.length === 0 ? {} : { artifacts },
+    ...repoRoot === undefined ? {} : { repoRoot }
+  });
+  if (options.json) {
+    writeResult(result, true);
+  } else {
+    for (const figure of result.results) {
+      const extras = [
+        ...figure.deprecatedAnchors.length === 0 ? [] : [`deprecatedAnchors=${figure.deprecatedAnchors.join(",")}`],
+        ...figure.orphanedNotes.length === 0 ? [] : [`orphanedNotes=${figure.orphanedNotes.join(",")}`]
+      ];
+      process.stdout.write(`${[figure.outcome, figure.artifactId, figure.token, ...extras].join(" ")}
+`);
+    }
+  }
+  const conflicts = result.results.filter((figure) => figure.outcome === "conflict");
+  if (conflicts.length > 0) {
+    throw new ConflictError(`publish conflict for ${conflicts.map((figure) => figure.artifactId).join(", ")}`);
+  }
+}
+async function run3(command, argv) {
   switch (command) {
-    case "preflight": {
-      const options = parseOptions(argv, new Set(["--obsidian-cli", "--expected-vault"]));
-      writeResult(preflight(required2(options, "--obsidian-cli"), required2(options, "--expected-vault")), options.json);
+    case "publish":
+      await runPublish(argv);
+      return;
+    case "pull": {
+      const options = parseOptions(argv, new Set(["--project", "--out", "--remote"]));
+      writeResult(await pull({
+        project: required2(options, "--project"),
+        out: required2(options, "--out"),
+        remote: optional2(options, "--remote") ?? defaultRemote,
+        env: process.env
+      }), options.json);
       return;
     }
     case "init": {
-      const options = parseOptions(argv, new Set(["--vault", "--expected-vault", "--project", "--source"]));
+      const options = parseOptions(argv, new Set(["--root", "--project", "--source"]));
       writeResult(initializeProject({
-        vault: required2(options, "--vault"),
-        expectedVault: required2(options, "--expected-vault"),
+        root: required2(options, "--root"),
         project: required2(options, "--project"),
         source: required2(options, "--source")
       }), options.json);
       return;
     }
     case "bootstrap": {
-      const options = parseOptions(argv, new Set(["--vault", "--expected-vault", "--project", "--source", "--bundle"]));
+      const options = parseOptions(argv, new Set(["--root", "--project", "--source", "--bundle"]));
       const bundlePath = optional2(options, "--bundle");
       writeResult(bootstrapSample({
-        vault: required2(options, "--vault"),
-        expectedVault: required2(options, "--expected-vault"),
+        root: required2(options, "--root"),
         project: required2(options, "--project"),
         source: required2(options, "--source"),
         ...bundlePath === undefined ? {} : { bundlePath }
@@ -10036,32 +10743,12 @@ function run4(command, argv) {
       return;
     }
     case "create": {
-      const options = parseOptions(argv, new Set([
-        "--vault",
-        "--expected-vault",
-        "--verified-vault-id",
-        "--project",
-        "--spec",
-        "--obsidian-cli",
-        "--runtime-receipt",
-        "--plugin-receipt",
-        "--assert-no-write"
-      ]), new Set(["--assert-no-write"]));
-      const common = {
-        vault: required2(options, "--vault"),
-        expectedVault: required2(options, "--expected-vault"),
+      const options = parseOptions(argv, new Set(["--root", "--project", "--spec"]));
+      writeResult(createSpec({
+        root: required2(options, "--root"),
         project: required2(options, "--project"),
         specPath: required2(options, "--spec")
-      };
-      const verifiedVaultId = optional2(options, "--verified-vault-id");
-      const result = verifiedVaultId === undefined ? createSpec(common) : createRenderedSpec({
-        ...common,
-        verifiedVaultId,
-        cli: optional2(options, "--obsidian-cli") ?? officialCli,
-        runtimeReceipt: optional2(options, "--runtime-receipt") ?? `${evidenceRoot}/task-2-preflight.json`,
-        pluginReceipt: optional2(options, "--plugin-receipt") ?? `${evidenceRoot}/task-2-plugin-install.json`
-      });
-      writeResult(result, options.json);
+      }), options.json);
       return;
     }
     case "export-series": {
@@ -10104,19 +10791,6 @@ function run4(command, argv) {
       writeResult(compileInteractiveAuthoringDocument(readJson(required2(options, "--spec"))), options.json);
       return;
     }
-    case "open": {
-      const options = parseOptions(argv, new Set([
-        "--obsidian-cli",
-        "--vault",
-        "--expected-vault",
-        "--path",
-        "--project",
-        "--artifact-id"
-      ]));
-      const path = optional2(options, "--path");
-      writeResult(path !== undefined ? openVaultPath(required2(options, "--obsidian-cli"), required2(options, "--expected-vault"), path) : openWorkingArtifact(required2(options, "--obsidian-cli"), required2(options, "--vault"), required2(options, "--expected-vault"), required2(options, "--project"), required2(options, "--artifact-id")), options.json);
-      return;
-    }
     case "contract": {
       const options = parseOptions(argv, new Set(["--fixture"]));
       const fixture = required2(options, "--fixture");
@@ -10137,7 +10811,7 @@ function run4(command, argv) {
       throw new InputError(`unknown command: ${command}`);
   }
 }
-function main() {
+async function main() {
   const argv = Bun.argv.slice(2);
   const first = argv[0];
   if (first === "--help" || first === "-h") {
@@ -10148,10 +10822,10 @@ function main() {
   }
   if (first === undefined)
     throw new InputError("a command is required; use --help");
-  run4(first, argv.slice(1));
+  await run3(first, argv.slice(1));
 }
 try {
-  main();
+  await main();
 } catch (error) {
   if (error instanceof CollisionError || error instanceof ConflictError) {
     process.stderr.write(`visual-note: ${error.message}
