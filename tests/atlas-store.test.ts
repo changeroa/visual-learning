@@ -47,7 +47,6 @@ let db: SQLiteD1;
 
 beforeEach(async () => {
   db = new SQLiteD1();
-  db.database.exec(highwaterMigration);
   await db
     .prepare("INSERT INTO projects VALUES (?, ?, ?, ?)")
     .bind(project, "visual-learning", "abc1234", "2026-09-29")
@@ -88,10 +87,9 @@ describe("D1 adapter", () => {
     expect(await db.prepare("SELECT title FROM figures").first<string>("title")).toBe("updated");
   });
 
-  test("the migration applies cleanly to an empty database", async () => {
+  test("SQLiteD1 applies every migration cleanly to an empty database", async () => {
     const migrated = new SQLiteD1();
     try {
-      migrated.database.exec(highwaterMigration);
       expect(
         (
           await migrated

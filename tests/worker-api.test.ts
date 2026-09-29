@@ -107,9 +107,6 @@ beforeAll(async () => {
 
 beforeEach(() => {
   db = new SQLiteD1();
-  db.database.exec(
-    readFileSync(new URL("../hosted/migrations/0002_token_highwater.sql", import.meta.url), "utf8"),
-  );
   env = {
     ASSETS: {
       fetch: async (request) =>

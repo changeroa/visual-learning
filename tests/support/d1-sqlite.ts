@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import type { D1Like, D1Result, D1Statement } from "../../hosted/worker/atlas-store";
 
-const migrationPath = new URL("../../hosted/migrations/0001_init.sql", import.meta.url);
+const migrationsDirectory = new URL("../../hosted/migrations/", import.meta.url);
 
 class SQLiteStatement implements D1Statement {
   constructor(
@@ -41,7 +41,11 @@ export class SQLiteD1 implements D1Like {
 
   constructor() {
     this.database.exec("PRAGMA foreign_keys = ON");
-    this.database.exec(readFileSync(migrationPath, "utf8"));
+    const migrations = readdirSync(migrationsDirectory)
+      .filter((filename) => filename.endsWith(".sql"))
+      .sort();
+    for (const migration of migrations)
+      this.database.exec(readFileSync(new URL(migration, migrationsDirectory), "utf8"));
   }
 
   prepare(sql: string): SQLiteStatement {

@@ -70,9 +70,6 @@ async function publish(
 
 beforeEach(async () => {
   db = new SQLiteD1();
-  db.database.exec(
-    readFileSync(new URL("../hosted/migrations/0002_token_highwater.sql", import.meta.url), "utf8"),
-  );
   await db
     .prepare("INSERT INTO projects VALUES (?, ?, ?, ?)")
     .bind(project, "visual-learning", "abc1234", "2026-09-29")

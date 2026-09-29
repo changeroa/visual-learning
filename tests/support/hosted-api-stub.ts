@@ -343,6 +343,7 @@ export function seedVerifyRuns(spec: unknown): VerifyRun[] {
 export async function startHostedApiStub(
   options: HostedApiStubOptions = {},
 ): Promise<HostedApiStub> {
+  // SQLiteD1 applies every hosted migration before the stub seeds or serves the database.
   const db = new SQLiteD1();
   const distDir = resolve(options.distDir ?? join(repoRoot, "hosted/dist"));
   if (options.seed ?? true) {
