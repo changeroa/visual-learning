@@ -18,20 +18,16 @@ import type { VisualNoteSpec } from "./schema";
 
 type TokenState = { readonly currentToken: string; readonly lastIssued: number };
 
-function statePath(vault: string, project: string, artifactId: string): string {
+function statePath(root: string, project: string, artifactId: string): string {
   return join(
-    vault,
+    root,
     artifactPaths(project, artifactId).drawingFolder,
     `${artifactId}.refresh-state.json`,
   );
 }
 
-function lockPath(vault: string, project: string, artifactId: string): string {
-  return join(
-    vault,
-    artifactPaths(project, artifactId).drawingFolder,
-    `${artifactId}.refresh.lock`,
-  );
+function lockPath(root: string, project: string, artifactId: string): string {
+  return join(root, artifactPaths(project, artifactId).drawingFolder, `${artifactId}.refresh.lock`);
 }
 
 function readState(path: string): TokenState {
@@ -57,7 +53,7 @@ function writeAtomic(path: string, bytes: string): void {
 }
 
 export function refreshArtifact(input: {
-  readonly vault: string;
+  readonly root: string;
   readonly project: string;
   readonly spec: VisualNoteSpec;
   readonly expectedToken: string;
@@ -66,10 +62,10 @@ export function refreshArtifact(input: {
   readonly token: string;
   readonly deprecatedAnchors: readonly string[];
 } {
-  if (!lstatSync(input.vault).isDirectory()) throw new InputError("vault must be a directory");
+  if (!lstatSync(input.root).isDirectory()) throw new InputError("root must be a directory");
   const paths = artifactPaths(input.project, input.spec.artifactId);
-  const drawingPath = join(input.vault, paths.drawing);
-  const lock = lockPath(input.vault, input.project, input.spec.artifactId);
+  const drawingPath = join(input.root, paths.drawing);
+  const lock = lockPath(input.root, input.project, input.spec.artifactId);
   let descriptor = -1;
   try {
     descriptor = openSync(lock, "wx");
@@ -77,7 +73,7 @@ export function refreshArtifact(input: {
     throw new ConflictError(`refresh conflict: ${input.spec.artifactId}`);
   }
   try {
-    const stateFile = statePath(input.vault, input.project, input.spec.artifactId);
+    const stateFile = statePath(input.root, input.project, input.spec.artifactId);
     const state = readState(stateFile);
     if (state.currentToken !== input.expectedToken)
       throw new ConflictError(`refresh conflict: expected ${input.expectedToken}`);
@@ -85,9 +81,9 @@ export function refreshArtifact(input: {
     const { scene: finalScene, deprecatedAnchors } = applyRefreshToScene(current, input.spec);
     const nextToken = `cas-${state.lastIssued + 1}`;
     writeAtomic(drawingPath, encodeSceneToMarkdown(finalScene));
-    writeAtomic(join(input.vault, paths.spec), jsonBytes(input.spec));
+    writeAtomic(join(input.root, paths.spec), jsonBytes(input.spec));
     writeAtomic(
-      join(input.vault, paths.note),
+      join(input.root, paths.note),
       noteBytes(input.spec, paths.drawing, paths.svg, deprecatedAnchors),
     );
     writeAtomic(

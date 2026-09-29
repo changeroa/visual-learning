@@ -116,12 +116,12 @@ function reacquireShared(lock: LockHandle): LockHandle {
 }
 
 export function openTransaction(
-  vault: string,
+  root: string,
   project: string,
   artifactId: string,
   control?: OpenControl,
 ): OpenedTransaction {
-  const paths = transactionPaths(vault, project, artifactId);
+  const paths = transactionPaths(root, project, artifactId);
   const exclusive = acquireLock(paths.lockRoot, "exclusive");
   let shared: LockHandle | null = null;
   try {

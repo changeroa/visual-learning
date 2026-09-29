@@ -20,7 +20,7 @@ describe("crash recovery", () => {
   test("rolls back a begun unpublished tuple to the old state", () => {
     const { project, state: a } = seedTransaction(root, "human-arrow-to-agent");
     const b = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: a.committedToken,
@@ -62,7 +62,7 @@ describe("crash recovery", () => {
   test("forward-recovers a published STATE before COMMITTED", () => {
     const { project, state } = seedTransaction(root, "human-arrow-to-agent");
     const b = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: state.committedToken,
@@ -96,7 +96,7 @@ describe("crash recovery", () => {
   test("forward recovery blocks when COMMITTED tuple disagrees with STATE", () => {
     const { project, state } = seedTransaction(root, "human-arrow-to-agent");
     const b = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: state.committedToken,
@@ -132,7 +132,7 @@ describe("crash recovery", () => {
   test("repeated recovery is idempotent after rollback", () => {
     const { project, state: a } = seedTransaction(root, "human-arrow-to-agent");
     const b = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: a.committedToken,

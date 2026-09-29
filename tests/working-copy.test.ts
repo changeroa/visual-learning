@@ -26,7 +26,7 @@ describe("working copy publication", () => {
     const snapshotBefore = readFileSync(revisionFiles(before.revisionPath).snapshot, "utf8");
 
     const result = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: before.committedToken,

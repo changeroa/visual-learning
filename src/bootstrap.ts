@@ -167,7 +167,7 @@ export function bootstrapProject(input: {
         const spec = parseVisualNoteSpec({ ...view.spec, source: metadata });
         specs.push(spec);
         bootstrapTransaction({
-          vault: stageRoot,
+          root: stageRoot,
           project: input.project,
           spec,
           scene: sceneFromSpec(spec, "sample-bootstrap"),
