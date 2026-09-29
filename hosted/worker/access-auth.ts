@@ -138,7 +138,9 @@ function decodeBase64Url(segment: string): Uint8Array<ArrayBuffer> {
 }
 
 function parseSegment(segment: string): Record<string, unknown> {
-  const decoded = new TextDecoder("utf-8", { fatal: true }).decode(decodeBase64Url(segment));
+  const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
+    decodeBase64Url(segment),
+  );
   const parsed: unknown = JSON.parse(decoded);
   if (!isRecord(parsed)) throw new AuthError(401);
   return parsed;
@@ -166,7 +168,7 @@ function parseToken(token: string): {
     header: parseSegment(headerSegment),
     payload: parseSegment(payloadSegment),
     signature: decodeBase64Url(signatureSegment),
-    signingInput: new TextEncoder().encode(`${headerSegment}.${payloadSegment}`),
+    signingInput: new Uint8Array(new TextEncoder().encode(`${headerSegment}.${payloadSegment}`)),
   };
 }
 
@@ -206,7 +208,7 @@ async function verifyToken(token: string, env: Env, jwks: JwksProvider): Promise
   }
   const key = await crypto.subtle.importKey(
     "jwk",
-    jwk,
+    { ...jwk, kty: jwk.kty },
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["verify"],

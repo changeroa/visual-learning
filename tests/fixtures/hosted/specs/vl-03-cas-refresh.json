@@ -1,0 +1,555 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "vl-03-cas-refresh",
+  "kind": "workflow",
+  "revision": 1,
+  "title": "refresh가 CAS 토큰으로 편집을 지키는 법",
+  "source": {
+    "root": "/Users/victor/projects/visual-learning",
+    "commit": "d6495cd8a82322d5c7220e8c7ea92a2dabe4128d"
+  },
+  "presentation": {
+    "layout": "components",
+    "direction": "left-to-right",
+    "columns": 2,
+    "frames": [
+      {
+        "id": "enter",
+        "label": "진입과 잠금",
+        "category": "security",
+        "order": 0
+      },
+      {
+        "id": "cas",
+        "label": "상태와 토큰",
+        "category": "data",
+        "order": 1
+      },
+      {
+        "id": "commit",
+        "label": "준비와 발행",
+        "category": "runtime",
+        "order": 2
+      },
+      {
+        "id": "recover",
+        "label": "복구",
+        "category": "risk",
+        "order": 3
+      }
+    ]
+  },
+  "learning": {
+    "question": "refresh와 restore는 expectedToken과 요소 소유권 규칙으로 편집을 어떻게 보호하는가?",
+    "answer": "refresh와 restore는 배타 잠금 아래 `STATE.committedToken`과 `expectedToken`을 대조한다. 일치하면 새 `cas-N`을 `BEGIN`에 기록하고 작업을 진행한다. receipt나 `STATE` digest가 바뀌면 중단하며, 성공 시 revision bundle을 발행하고 상태를 갱신한다. refresh는 human 요소를 보존하고 참조된 agent 요소를 `deprecatedAnchor`로 남긴다. 실패 토큰은 소각하며, 복구는 토큰에 따라 rollback 또는 forward로 진행한다.",
+    "route": [
+      {
+        "semanticId": "engine-facade",
+        "explanation": "`transaction-engine`은 `refreshTransaction`과 `restoreTransaction`을 외부에 내보낸다. 두 흐름의 공통 커밋 구현을 추적하는 시작점이다."
+      },
+      {
+        "semanticId": "exclusive-lock",
+        "explanation": "`commitPrepared`는 배타 잠금을 먼저 잡는다. 동시 writer는 잠금 충돌로 진입하지 못한다."
+      },
+      {
+        "semanticId": "state-records",
+        "explanation": "`STATE`는 현재 `committedToken`, revision·working 경로, hash·generation을 담는다. `BEGIN`과 `COMMITTED`는 진행 상태와 확정 tuple을 기록한다."
+      },
+      {
+        "semanticId": "cas-token",
+        "explanation": "`expectedToken`이 현재 `STATE`와 다르면 충돌한다. 다음 토큰은 revision, burn, begin, committed 기록의 최대 번호보다 크게 계산된다."
+      },
+      {
+        "semanticId": "refresh-ownership",
+        "explanation": "`applyRefreshToScene`은 human 요소를 보존하고 agent 요소만 갱신·추가·제거한다. human이 참조하는 삭제 대상 agent 요소는 `deprecatedAnchor`로 유지한다."
+      },
+      {
+        "semanticId": "revision-bundle",
+        "explanation": "`stageRevision`은 `spec`, `note`, `svg`, `snapshot`, projection, metadata를 revision 디렉터리에 쓴다. `STATE`를 바꾸기 전에 새 bundle과 working 파일을 준비·발행한다."
+      },
+      {
+        "semanticId": "transaction-recovery",
+        "explanation": "`recoverTransaction`은 `STATE` 토큰과 `BEGIN`의 previous/new token을 대조한다. 이전 토큰이면 시도를 정리하고 소각해 rollback한다. 새 토큰이면 bundle을 검증하고 누락된 `COMMITTED`를 보완해 forward 복구한다."
+      },
+      {
+        "semanticId": "restore-transaction",
+        "explanation": "`restoreTransaction`은 선택한 `revisionToken`의 spec과 snapshot을 읽어 공통 `commitPrepared`에 넘긴다. 복원도 현재 `expectedToken`을 검사하고 새 커밋 절차를 거친다."
+      }
+    ],
+    "glossary": [
+      {
+        "term": "STATE",
+        "meaning": "현재 확정 token과 revision·working 경로, agent base hash, scene generation을 담는 권위 상태 파일이다."
+      },
+      {
+        "term": "BEGIN",
+        "meaning": "새 시도의 token, 이전 token·STATE digest, 원본 working 파일 receipt를 기록하는 진행 표식이다."
+      },
+      {
+        "term": "COMMITTED",
+        "meaning": "확정된 token과 revision·working 경로 및 hash·generation tuple을 기록한다."
+      },
+      {
+        "term": "deprecatedAnchor",
+        "meaning": "이번 spec에서 빠졌지만 human 요소가 참조하므로 유지되는 agent 요소의 표시다."
+      },
+      {
+        "term": "FileReceipt",
+        "meaning": "파일 inode, generation, fullHash, watcher eventSequence로 원본 파일의 변경 여부를 비교하는 값이다."
+      }
+    ],
+    "scope": {
+      "covers": [
+        "transaction-engine을 통한 refresh·restore 진입과 공통 커밋 경로를 다룬다.",
+        "배타 잠금, expectedToken 비교, receipt와 STATE digest 기반 CAS 검사를 다룬다.",
+        "cas-N 산출, BEGIN·STATE·COMMITTED 기록 및 rollback·forward recovery를 다룬다.",
+        "agent/human 소유권에 따른 refresh 변경과 deprecatedAnchor 처리를 다룬다.",
+        "_history/revisions/cas-N에 저장되는 revision bundle과 restore 입력을 다룬다."
+      ],
+      "omits": [
+        "commitPrepared의 각 fsync·rename 경계와 파일시스템별 내구성 세부는 다루지 않는다.",
+        "FileReceipt의 watcher 이벤트 처리와 Excalidraw 편집기 저장 세부는 다루지 않는다.",
+        "revision metadata의 개별 bundle hash 계산·검증 알고리즘은 다루지 않는다.",
+        "partial ownership 및 irreparable cross-ownership cycle 오류의 전체 규칙은 다루지 않는다.",
+        "legacy fingerprint 및 기존 revision 호환 처리는 다루지 않는다."
+      ]
+    },
+    "verify": [
+      {
+        "semanticId": "cas-token",
+        "how": "`nextToken`이 committed·revision·burned·BEGIN·COMMITTED 번호를 고려하는지 확인한다.",
+        "command": "grep -n -A18 'export function nextToken' src/transaction-state.ts"
+      },
+      {
+        "semanticId": "transaction-recovery",
+        "how": "`BEGIN`의 previous token과 새 token이 rollback·forward recovery를 나누는 부분을 확인한다.",
+        "command": "grep -n -A43 'export function recoverTransaction' src/transaction-verify.ts"
+      },
+      {
+        "semanticId": "refresh-ownership",
+        "how": "human 요소 보존, agent 갱신, 참조된 삭제 대상의 anchor 처리를 확인한다.",
+        "command": "grep -n -A50 'export function applyRefreshToScene' src/refresh-apply.ts"
+      },
+      {
+        "semanticId": "revision-bundle",
+        "how": "revision bundle에 snapshot과 metadata 등이 기록되는지 확인한다.",
+        "command": "grep -n -A29 'export function stageRevision' src/transaction-publish.ts"
+      }
+    ],
+    "checks": [
+      {
+        "prompt": "같은 expectedToken으로 동시에 시작한 refresh writer 둘 다 커밋할 수 있는가?",
+        "answer": "아니다. 잠금이 사용 중이면 `acquireLock(..., \"exclusive\")`가 `ConflictError`를 낸다. 커밋도 현재 `STATE.committedToken`이 `expectedToken`과 다르면 충돌하므로, 두 writer가 함께 성공하는 경로는 보이지 않는다."
+      },
+      {
+        "prompt": "사람이 참조 중인 agent 요소가 새 spec에서 빠지면 제거되는가?",
+        "answer": "아니다. `humanReferencedAgents`에 포함되면 `deprecatedAnchor(element, spec.revision)`로 scene에 남고 결과 목록에도 ID가 추가된다."
+      }
+    ],
+    "analogies": []
+  },
+  "nodes": [
+    {
+      "semanticId": "engine-facade",
+      "label": "transaction-engine\n진입점",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-engine.ts",
+          "lineStart": 1,
+          "lineEnd": 8,
+          "symbol": "refreshTransaction"
+        }
+      ],
+      "visual": {
+        "category": "security",
+        "frameId": "enter",
+        "shape": "rectangle",
+        "emphasis": "primary",
+        "lane": "main",
+        "order": 1
+      }
+    },
+    {
+      "semanticId": "exclusive-lock",
+      "label": "acquireLock\n작성 잠금",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-lock.ts",
+          "lineStart": 83,
+          "lineEnd": 108,
+          "symbol": "export function acquireLock"
+        },
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 54,
+          "lineEnd": 57,
+          "symbol": "acquireLock(paths.lockRoot, \"exclusive\")"
+        }
+      ],
+      "visual": {
+        "category": "security",
+        "frameId": "enter",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 2
+      }
+    },
+    {
+      "semanticId": "state-records",
+      "label": "StateRecord\n확정 상태",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-state.ts",
+          "lineStart": 10,
+          "lineEnd": 34,
+          "symbol": "export type StateRecord"
+        },
+        {
+          "path": "src/transaction-state.ts",
+          "lineStart": 79,
+          "lineEnd": 108,
+          "symbol": "export function readState"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "frameId": "cas",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 3
+      }
+    },
+    {
+      "semanticId": "cas-token",
+      "label": "nextToken\n재사용 방지",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-state.ts",
+          "lineStart": 165,
+          "lineEnd": 183,
+          "symbol": "export function nextToken"
+        },
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 62,
+          "lineEnd": 85,
+          "symbol": "writeBegin"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "frameId": "cas",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 4
+      }
+    },
+    {
+      "semanticId": "refresh-ownership",
+      "label": "applyRefreshToScene\n사람 요소 보존",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/refresh-apply.ts",
+          "lineStart": 8,
+          "lineEnd": 57,
+          "symbol": "export function applyRefreshToScene"
+        },
+        {
+          "path": "src/refresh-elements.ts",
+          "lineStart": 100,
+          "lineEnd": 108,
+          "symbol": "export function deprecatedAnchor"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "commit",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 5
+      }
+    },
+    {
+      "semanticId": "revision-bundle",
+      "label": "stageRevision\n불변 리비전",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-layout.ts",
+          "lineStart": 39,
+          "lineEnd": 45,
+          "symbol": "revisionPath(token: string)"
+        },
+        {
+          "path": "src/transaction-publish.ts",
+          "lineStart": 24,
+          "lineEnd": 52,
+          "symbol": "export function stageRevision"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "commit",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 6
+      }
+    },
+    {
+      "semanticId": "transaction-recovery",
+      "label": "recoverTransaction\n중단 복구",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-verify.ts",
+          "lineStart": 68,
+          "lineEnd": 110,
+          "symbol": "export function recoverTransaction"
+        },
+        {
+          "path": "src/transaction-verify.ts",
+          "lineStart": 118,
+          "lineEnd": 133,
+          "symbol": "export function openTransaction"
+        }
+      ],
+      "visual": {
+        "category": "risk",
+        "frameId": "recover",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "exception",
+        "order": 7
+      }
+    },
+    {
+      "semanticId": "restore-transaction",
+      "label": "restoreTransaction\n스냅샷 복원",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 211,
+          "lineEnd": 239,
+          "symbol": "export function restoreTransaction"
+        }
+      ],
+      "visual": {
+        "category": "security",
+        "frameId": "enter",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "upstream",
+        "order": 8
+      }
+    }
+  ],
+  "edges": [
+    {
+      "semanticId": "facade-to-lock",
+      "label": "refresh 진입",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-engine.ts",
+          "lineStart": 1,
+          "lineEnd": 8,
+          "symbol": "refreshTransaction"
+        },
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 54,
+          "lineEnd": 57,
+          "symbol": "acquireLock(paths.lockRoot, \"exclusive\")"
+        }
+      ],
+      "from": "engine-facade",
+      "to": "exclusive-lock",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "lock-to-state",
+      "label": "복구 후 읽기",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 58,
+          "lineEnd": 64,
+          "symbol": "recoverTransaction(paths)"
+        },
+        {
+          "path": "src/transaction-verify.ts",
+          "lineStart": 73,
+          "lineEnd": 76,
+          "symbol": "readState(paths.statePath)"
+        }
+      ],
+      "from": "exclusive-lock",
+      "to": "state-records",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "state-to-token",
+      "label": "기대 토큰 검사",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 60,
+          "lineEnd": 65,
+          "symbol": "state.committedToken !== input.expectedToken"
+        }
+      ],
+      "from": "state-records",
+      "to": "cas-token",
+      "relation": "state-transition"
+    },
+    {
+      "semanticId": "token-to-refresh",
+      "label": "씬 준비",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 183,
+          "lineEnd": 208,
+          "symbol": "applyRefreshToScene"
+        }
+      ],
+      "from": "cas-token",
+      "to": "refresh-ownership",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "refresh-to-bundle",
+      "label": "씬과 메타데이터",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 89,
+          "lineEnd": 101,
+          "symbol": "stageRevision"
+        },
+        {
+          "path": "src/transaction-publish.ts",
+          "lineStart": 38,
+          "lineEnd": 52,
+          "symbol": "writeTextFsynced(files.snapshot"
+        }
+      ],
+      "from": "refresh-ownership",
+      "to": "revision-bundle",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "bundle-to-state",
+      "label": "발행 후 STATE",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 133,
+          "lineEnd": 145,
+          "symbol": "writeState(paths.statePath, nextState)"
+        }
+      ],
+      "from": "revision-bundle",
+      "to": "state-records",
+      "relation": "state-transition"
+    },
+    {
+      "semanticId": "state-to-recovery",
+      "label": "BEGIN 대조",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-verify.ts",
+          "lineStart": 73,
+          "lineEnd": 88,
+          "symbol": "state.committedToken === begin.previousToken"
+        },
+        {
+          "path": "src/transaction-verify.ts",
+          "lineStart": 89,
+          "lineEnd": 105,
+          "symbol": "state.committedToken === begin.token"
+        }
+      ],
+      "from": "state-records",
+      "to": "transaction-recovery",
+      "relation": "state-transition"
+    },
+    {
+      "semanticId": "recovery-to-token",
+      "label": "실패 토큰 소각",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-verify.ts",
+          "lineStart": 32,
+          "lineEnd": 36,
+          "symbol": "burnToken(paths, token, reason)"
+        },
+        {
+          "path": "src/transaction-state.ts",
+          "lineStart": 178,
+          "lineEnd": 183,
+          "symbol": "export function burnToken"
+        }
+      ],
+      "from": "transaction-recovery",
+      "to": "cas-token",
+      "relation": "state-transition"
+    },
+    {
+      "semanticId": "restore-to-lock",
+      "label": "같은 커밋 경로",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 228,
+          "lineEnd": 239,
+          "symbol": "return commitPrepared"
+        },
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 43,
+          "lineEnd": 57,
+          "symbol": "function commitPrepared"
+        }
+      ],
+      "from": "restore-transaction",
+      "to": "exclusive-lock",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "restore-to-bundle",
+      "label": "이전 스냅샷 읽기",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/transaction-commit.ts",
+          "lineStart": 220,
+          "lineEnd": 227,
+          "symbol": "revisionFiles"
+        }
+      ],
+      "from": "restore-transaction",
+      "to": "revision-bundle",
+      "relation": "data-movement"
+    }
+  ]
+}

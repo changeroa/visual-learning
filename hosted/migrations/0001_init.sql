@@ -2,9 +2,9 @@
 -- "commit" is an SQLite keyword; queries must quote the column as "commit".
 
 CREATE TABLE projects (
-  project_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL PRIMARY KEY,
   repo_name TEXT NOT NULL,
-  "commit" TEXT NOT NULL,
+  "commit" TEXT,
   published_at TEXT NOT NULL
 );
 
@@ -50,14 +50,14 @@ CREATE TABLE verify_runs (
   project_id TEXT NOT NULL,
   artifact_id TEXT NOT NULL,
   idx INTEGER NOT NULL,
-  semantic_id TEXT NOT NULL,
+  semantic_id TEXT,
   how TEXT NOT NULL,
   command TEXT,
   status TEXT NOT NULL,
   reason TEXT,
   exit_code INTEGER,
-  stdout TEXT,
-  stderr TEXT,
+  stdout TEXT NOT NULL,
+  stderr TEXT NOT NULL,
   "commit" TEXT,
   ran_at TEXT,
   PRIMARY KEY (project_id, artifact_id, idx)
