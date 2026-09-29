@@ -13,7 +13,7 @@ import {
   readFigure,
   readProject,
 } from "./atlas-store";
-import { publishFigure } from "./publish-merge";
+import { publishFigure, validateScene } from "./publish-merge";
 
 // The Worker entry may only export handlers (workerd rejects other runtime exports).
 const MAX_BODY_BYTES = 1_500_000;
@@ -227,13 +227,15 @@ async function putNote({ request, db, params }: Context): Promise<Response> {
 
 async function publish({ request, db }: Context): Promise<Response> {
   const body = parseInput(publishBody, await readJson(request));
-  // Reject the whole request before any write when one spec is invalid.
+  // Reject the whole request before any write when one spec or scene is invalid.
   body.figures.forEach((figure, index) => {
+    let artifactId: string;
     try {
-      parseVisualNoteSpec(figure.spec);
+      artifactId = parseVisualNoteSpec(figure.spec).artifactId;
     } catch (error) {
       throw new InputError(`invalid spec for figures[${index}]`, { cause: error });
     }
+    validateScene(figure.scene as ExcalidrawScene, artifactId);
   });
   await db
     .prepare(`INSERT INTO projects (project_id, repo_name, "commit", published_at)

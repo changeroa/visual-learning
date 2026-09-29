@@ -29,7 +29,7 @@ function parseSpec(input: unknown) {
   }
 }
 
-function validateScene(scene: ExcalidrawScene, artifactId: string): void {
+export function validateScene(scene: ExcalidrawScene, artifactId: string): void {
   const graph = buildReferenceGraph(scene, artifactId);
   if (graph.dangling.length > 0)
     throw new InputError(`dangling scene references: ${graph.dangling.join(", ")}`);
