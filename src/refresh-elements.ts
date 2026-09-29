@@ -8,20 +8,7 @@ function hashId(value: string): number {
   return hash;
 }
 
-function statusStyle(status: string): {
-  readonly strokeColor: string;
-  readonly backgroundColor: string;
-  readonly strokeStyle: string;
-} {
-  if (status === "fact")
-    return { strokeColor: "#1971c2", backgroundColor: "#d0ebff", strokeStyle: "solid" };
-  if (status === "inference")
-    return { strokeColor: "#e67700", backgroundColor: "#fff3bf", strokeStyle: "dashed" };
-  return { strokeColor: "#7048e8", backgroundColor: "#e5dbff", strokeStyle: "solid" };
-}
-
 export function freshElement(planned: PlannedElement): ExcalidrawElement {
-  const style = statusStyle(planned.customData.status);
   const common: ExcalidrawElement = {
     id: planned.id,
     type: planned.type,
@@ -30,11 +17,11 @@ export function freshElement(planned: PlannedElement): ExcalidrawElement {
     width: planned.width,
     height: planned.height,
     angle: 0,
-    strokeColor: style.strokeColor,
-    backgroundColor: planned.type === "rectangle" ? style.backgroundColor : "transparent",
-    fillStyle: "solid",
+    strokeColor: planned.style.strokeColor,
+    backgroundColor: planned.style.backgroundColor,
+    fillStyle: planned.style.fillStyle,
     strokeWidth: planned.role === "title" ? 1 : 2,
-    strokeStyle: style.strokeStyle,
+    strokeStyle: planned.customData.status === "inference" ? "dashed" : "solid",
     roughness: 0,
     opacity: 100,
     roundness: null,
@@ -56,7 +43,7 @@ export function freshElement(planned: PlannedElement): ExcalidrawElement {
       ...common,
       text: planned.text ?? "",
       fontSize: planned.role === "title" ? 32 : planned.role === "edge-label" ? 16 : 20,
-      fontFamily: 2,
+      fontFamily: planned.style.fontFamily ?? 1,
       textAlign: "center",
       verticalAlign: "middle",
       containerId: null,
@@ -83,16 +70,17 @@ export function freshElement(planned: PlannedElement): ExcalidrawElement {
 
 export function mergeAgent(current: ExcalidrawElement, planned: PlannedElement): ExcalidrawElement {
   const updated = structuredClone(current);
-  const style = statusStyle(planned.customData.status);
-  updated.strokeColor = style.strokeColor;
-  updated.backgroundColor = planned.type === "rectangle" ? style.backgroundColor : "transparent";
-  updated.strokeStyle = style.strokeStyle;
+  updated.strokeColor = planned.style.strokeColor;
+  updated.backgroundColor = planned.style.backgroundColor;
+  updated["fillStyle"] = planned.style.fillStyle;
+  updated.strokeStyle = planned.customData.status === "inference" ? "dashed" : "solid";
   updated.strokeWidth = planned.role === "title" ? 1 : 2;
   updated.customData = structuredClone(planned.customData);
   if (planned.type === "text") {
     updated.text = planned.text ?? "";
     updated.originalText = planned.text ?? "";
     updated.rawText = planned.text ?? "";
+    updated["fontFamily"] = planned.style.fontFamily ?? 1;
   }
   return updated;
 }

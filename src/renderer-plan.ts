@@ -1,41 +1,33 @@
 import { createHash } from "node:crypto";
 import { CollisionError } from "./errors";
 import type { VisualNoteSpec } from "./schema";
+import {
+  type PlannedElementRole,
+  type PlannedElementStyle,
+  type PlannedElementType,
+  styleForPlannedElement,
+  type VisualCategory,
+} from "./template-style";
 import { wrapLabel } from "./wrap-label";
 
-export type ElementRole =
-  | "title"
-  | "frame-shape"
-  | "frame-label"
-  | "node-shape"
-  | "node-label"
-  | "edge-line"
-  | "edge-label";
+export type ElementRole = PlannedElementRole;
 type Status = "fact" | "inference" | "question";
-type Category =
-  | "cloudflare"
-  | "aws"
-  | "external"
-  | "data"
-  | "runtime"
-  | "security"
-  | "risk"
-  | "neutral";
+type Category = VisualCategory;
 type Evidence = VisualNoteSpec["nodes"][number]["evidence"];
 type SemanticId = VisualNoteSpec["nodes"][number]["semanticId"];
-type Shape = "rectangle" | "ellipse" | "diamond";
 
 export type PlannedElement = {
   readonly id: string;
   readonly semanticId: string;
   readonly role: ElementRole;
-  readonly type: Shape | "text" | "arrow";
+  readonly type: PlannedElementType;
   readonly x: number;
   readonly y: number;
   readonly width: number;
   readonly height: number;
   readonly text: string | null;
   readonly points: readonly (readonly [number, number])[];
+  readonly style: PlannedElementStyle;
   readonly customData: {
     readonly schemaVersion: 1;
     readonly owner: "agent";
@@ -65,7 +57,7 @@ export type ElementIdFactory = (
 
 type Placement = { x: number; y: number; width: number; height: number };
 type FramePlacement = Placement & { id: string; label: string; category: Category };
-type ElementFields = Omit<PlannedElement, "id" | "customData"> & {
+type ElementFields = Omit<PlannedElement, "id" | "style" | "customData"> & {
   status: Status;
   category?: Category;
   evidence: Evidence;
@@ -331,6 +323,11 @@ export function planScene(
     elements.push({
       ...element,
       id,
+      style: styleForPlannedElement({
+        category,
+        role: element.role,
+        type: element.type,
+      }),
       customData: {
         schemaVersion: 1,
         owner: "agent",
