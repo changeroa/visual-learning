@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ensureRealDirectory } from "../src/path-guard";
 import { safeCreateFile, safeMakeDirectories } from "../src/safe-path";
 
 const rootPrefix = `visual-note-root-${process.pid}-`;
@@ -66,6 +67,17 @@ describe("descriptor-relative safe mutation", () => {
     // Then
     expect(mutate).toThrow();
     expect(readFileSync(join(paths.outside, "victim"), "utf8")).toBe("original");
+  });
+
+  test("names a symlinked output ancestor and suggests realpath", () => {
+    // Given
+    const paths = fixture();
+    const linked = join(paths.root, "linked");
+    symlinkSync(paths.outside, linked);
+    // When / Then
+    expect(() => ensureRealDirectory(join(linked, "out"), "--out")).toThrow(
+      `--out has a symlinked ancestor: ${linked}; resolve it with realpath first`,
+    );
   });
 
   test("rejects a dirty final collision without replacing it", () => {

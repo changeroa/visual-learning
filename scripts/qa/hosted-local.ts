@@ -395,6 +395,9 @@ async function main(): Promise<void> {
 
   const pathEnv = { PATH: process.env["PATH"] ?? "" };
   rmSync(stateDir, { recursive: true, force: true });
+  const migrationFiles = readdirSync(join(repoRoot, "hosted/migrations"))
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
   const migrate = await run(
     [
       "bunx",
@@ -412,10 +415,12 @@ async function main(): Promise<void> {
     { ...pathEnv, HOME: process.env["HOME"] ?? "", WRANGLER_SEND_METRICS: "false" },
     "",
   );
+  const migrationOutput = migrate.stdout + migrate.stderr;
+  const missingMigrations = migrationFiles.filter((file) => !migrationOutput.includes(file));
   assert(
-    migrate.exitCode === 0 && /0001_init\.sql/.test(migrate.stdout + migrate.stderr),
-    "fresh local D1 state migrated (0001_init.sql applied)",
-    `exit ${migrate.exitCode}`,
+    migrate.exitCode === 0 && migrationFiles.length > 0 && missingMigrations.length === 0,
+    "fresh local D1 state migrated (all migration files applied)",
+    `exit ${migrate.exitCode}; missing: ${missingMigrations.join(", ") || "none"}`,
   );
   const build = await run(["bun", "run", "build:web"], {
     ...pathEnv,
