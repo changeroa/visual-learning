@@ -40,6 +40,13 @@ function setVerifyHow(root: string, how: string): void {
   writeFileSync(path, jsonBytes(spec));
 }
 
+function setSourceRoot(root: string, sourceRoot: string): void {
+  const path = join(root, specPath);
+  const spec = JSON.parse(readFileSync(path, "utf8")) as { source: { root: string } };
+  spec.source.root = sourceRoot;
+  writeFileSync(path, jsonBytes(spec));
+}
+
 function inputError(run: () => unknown): InputError {
   try {
     run();
@@ -128,6 +135,36 @@ describe("publish payload builder", () => {
     // Then
     expect(payload.figures[0]?.spec.learning?.verify[0]?.how).toBe(
       "a visual-learning/src/cli.ts b ~/notes/x.md c ~/docs/y d ~/projects/visual-learning-wt/z",
+    );
+  });
+
+  test("rewrites to the repo name when the source root equals the atlas root", () => {
+    // Given
+    const root = copyFixture(exportRoot);
+    process.env["HOME"] = "/Users/someone-else";
+    setSourceRoot(root, root);
+    setVerifyHow(root, `open ${root}/notes/x.md`);
+    // When
+    const payload = buildPublishPayload({ root, project: "visual-learning", repoName: "repo" });
+    // Then
+    expect(payload.figures[0]?.spec.learning?.verify[0]?.how).toBe("open repo/notes/x.md");
+    expect(payload.figures[0]?.spec.source.root).toBe("repo");
+  });
+
+  test("rewrites the longer atlas root first when it sits inside the source root", () => {
+    // Given
+    const sourceRoot = realpathSync(mkdtempSync(join(tmpdir(), "visual-learning-payload-src-")));
+    temporaryRoots.push(sourceRoot);
+    const root = join(sourceRoot, "atlas");
+    cpSync(exportRoot, root, { recursive: true });
+    process.env["HOME"] = "/Users/someone-else";
+    setSourceRoot(root, sourceRoot);
+    setVerifyHow(root, `a ${root}/notes/x.md b ${sourceRoot}/src/cli.ts`);
+    // When
+    const payload = buildPublishPayload({ root, project: "visual-learning", repoName: "repo" });
+    // Then
+    expect(payload.figures[0]?.spec.learning?.verify[0]?.how).toBe(
+      "a ~/notes/x.md b repo/src/cli.ts",
     );
   });
 
