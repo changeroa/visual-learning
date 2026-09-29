@@ -25,6 +25,15 @@ const sourceRoot = z
     (value) => isAbsolute(value) && normalize(value) === value,
     "source root must be a normalized absolute path",
   );
+// Hosted specs arrive path-scrubbed (source.root is the repo name), so no local absolute path
+// ever reaches the Worker.
+const hostedSourceRoot = z
+  .string()
+  .min(1)
+  .refine(
+    (value) => !isAbsolute(value) && !/^(?:[~\\/]|[A-Za-z]:)/.test(value),
+    "hosted source root must not be an absolute or home-relative path",
+  );
 
 export const visualCategorySchema = z.enum([
   "cloudflare",
@@ -159,78 +168,94 @@ export const learningSchema = z
   .strict();
 export type LearningLayer = z.infer<typeof learningSchema>;
 
-export const visualNoteSpecSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    artifactId,
-    kind: z.enum(visualKindValues),
-    revision: z.number().int().positive(),
-    title: z.string().trim().min(1),
-    source: z
-      .object({
-        root: sourceRoot,
-        commit: z
-          .string()
-          .regex(/^[0-9a-f]{7,64}$/)
-          .nullable(),
-      })
-      .strict(),
-    presentation: presentationSchema.optional(),
-    learning: learningSchema.optional(),
-    nodes: z.array(visualNodeSchema).min(1),
-    edges: z.array(visualEdgeSchema),
-  })
-  .strict()
-  .superRefine((spec, context) => {
-    const allIds = [
-      ...spec.nodes.map((node) => node.semanticId),
-      ...spec.edges.map((edge) => edge.semanticId),
-    ];
-    if (new Set(allIds).size !== allIds.length)
-      context.addIssue({ code: "custom", message: "semantic IDs must be unique" });
-    const nodeIds = new Set(spec.nodes.map((node) => node.semanticId));
-    for (const edge of spec.edges) {
-      if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to))
+function specSchemaWithRoot(root: z.ZodString) {
+  return z
+    .object({
+      schemaVersion: z.literal(1),
+      artifactId,
+      kind: z.enum(visualKindValues),
+      revision: z.number().int().positive(),
+      title: z.string().trim().min(1),
+      source: z
+        .object({
+          root,
+          commit: z
+            .string()
+            .regex(/^[0-9a-f]{7,64}$/)
+            .nullable(),
+        })
+        .strict(),
+      presentation: presentationSchema.optional(),
+      learning: learningSchema.optional(),
+      nodes: z.array(visualNodeSchema).min(1),
+      edges: z.array(visualEdgeSchema),
+    })
+    .strict()
+    .superRefine((spec, context) => {
+      const allIds = [
+        ...spec.nodes.map((node) => node.semanticId),
+        ...spec.edges.map((edge) => edge.semanticId),
+      ];
+      if (new Set(allIds).size !== allIds.length)
+        context.addIssue({ code: "custom", message: "semantic IDs must be unique" });
+      const nodeIds = new Set(spec.nodes.map((node) => node.semanticId));
+      for (const edge of spec.edges) {
+        if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to))
+          context.addIssue({
+            code: "custom",
+            message: `edge ${edge.semanticId} has a dangling endpoint`,
+          });
+      }
+      for (const claim of [...spec.nodes, ...spec.edges]) {
+        if (claim.status === "fact" && claim.evidence.length === 0)
+          context.addIssue({
+            code: "custom",
+            message: `fact ${claim.semanticId} requires evidence`,
+          });
+      }
+      const frames = spec.presentation?.frames ?? [];
+      if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
+        context.addIssue({ code: "custom", message: "presentation frame IDs must be unique" });
+      const frameIds = new Set(frames.map((frame) => frame.id));
+      for (const node of spec.nodes) {
+        if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId))
+          context.addIssue({
+            code: "custom",
+            message: `node ${node.semanticId} references an unknown presentation frame`,
+          });
+      }
+      const learning = spec.learning;
+      if (learning === undefined) return;
+      const claimIds = new Set<string>(allIds);
+      const routeIds = learning.route.map((step) => step.semanticId);
+      if (new Set(routeIds).size !== routeIds.length)
         context.addIssue({
           code: "custom",
-          message: `edge ${edge.semanticId} has a dangling endpoint`,
+          message: "learning route must not repeat a semantic ID",
         });
-    }
-    for (const claim of [...spec.nodes, ...spec.edges]) {
-      if (claim.status === "fact" && claim.evidence.length === 0)
-        context.addIssue({ code: "custom", message: `fact ${claim.semanticId} requires evidence` });
-    }
-    const frames = spec.presentation?.frames ?? [];
-    if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
-      context.addIssue({ code: "custom", message: "presentation frame IDs must be unique" });
-    const frameIds = new Set(frames.map((frame) => frame.id));
-    for (const node of spec.nodes) {
-      if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId))
-        context.addIssue({
-          code: "custom",
-          message: `node ${node.semanticId} references an unknown presentation frame`,
-        });
-    }
-    const learning = spec.learning;
-    if (learning === undefined) return;
-    const claimIds = new Set<string>(allIds);
-    const routeIds = learning.route.map((step) => step.semanticId);
-    if (new Set(routeIds).size !== routeIds.length)
-      context.addIssue({ code: "custom", message: "learning route must not repeat a semantic ID" });
-    for (const id of [...routeIds, ...learning.verify.map((step) => step.semanticId)]) {
-      if (!claimIds.has(id))
-        context.addIssue({
-          code: "custom",
-          message: `learning references unknown semantic ID ${id}`,
-        });
-    }
-    const terms = learning.glossary.map((entry) => entry.term);
-    if (new Set(terms).size !== terms.length)
-      context.addIssue({ code: "custom", message: "learning glossary terms must be unique" });
-  });
+      for (const id of [...routeIds, ...learning.verify.map((step) => step.semanticId)]) {
+        if (!claimIds.has(id))
+          context.addIssue({
+            code: "custom",
+            message: `learning references unknown semantic ID ${id}`,
+          });
+      }
+      const terms = learning.glossary.map((entry) => entry.term);
+      if (new Set(terms).size !== terms.length)
+        context.addIssue({ code: "custom", message: "learning glossary terms must be unique" });
+    });
+}
+
+export const visualNoteSpecSchema = specSchemaWithRoot(sourceRoot);
+const hostedVisualNoteSpecSchema = specSchemaWithRoot(hostedSourceRoot);
 
 export type VisualNoteSpec = z.infer<typeof visualNoteSpecSchema>;
 
 export function parseVisualNoteSpec(input: unknown): VisualNoteSpec {
   return visualNoteSpecSchema.parse(input);
+}
+
+// The Worker boundary: identical rules except that source.root is the scrubbed repo name.
+export function parseHostedVisualNoteSpec(input: unknown): VisualNoteSpec {
+  return hostedVisualNoteSpecSchema.parse(input);
 }

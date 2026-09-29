@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ConflictError, InputError } from "../../src/errors";
 import type { ExcalidrawScene } from "../../src/excalidraw-file";
-import { parseVisualNoteSpec } from "../../src/schema";
+import { parseHostedVisualNoteSpec } from "../../src/schema";
 import { type AccessIdentity, AuthError, authenticate, createJwksProvider } from "./access-auth";
 import {
   commitNote,
@@ -231,7 +231,7 @@ async function publish({ request, db }: Context): Promise<Response> {
   body.figures.forEach((figure, index) => {
     let artifactId: string;
     try {
-      artifactId = parseVisualNoteSpec(figure.spec).artifactId;
+      artifactId = parseHostedVisualNoteSpec(figure.spec).artifactId;
     } catch (error) {
       throw new InputError(`invalid spec for figures[${index}]`, { cause: error });
     }

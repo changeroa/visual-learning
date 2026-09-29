@@ -62,8 +62,13 @@ if (args.seed !== undefined) {
   const base = new URL(args.seed);
   if (base.hostname !== "127.0.0.1" && base.hostname !== "localhost")
     throw new Error(`--seed only targets a local dev Worker, not ${base.hostname}`);
+  const secondSpec = JSON.parse(
+    readFileSync(join(exportSeries, "specs/vl-01-architecture.json"), "utf8"),
+  ) as { source: { root: string } };
+  // The Worker accepts only path-scrubbed specs (source.root is the repo name).
+  secondSpec.source.root = "visual-learning";
   const second = {
-    spec: JSON.parse(readFileSync(join(exportSeries, "specs/vl-01-architecture.json"), "utf8")),
+    spec: secondSpec,
     scene: parseSceneMarkdown(
       readFileSync(join(exportSeries, "vl-01-architecture.excalidraw.md"), "utf8"),
     ).scene,

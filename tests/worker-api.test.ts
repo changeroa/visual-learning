@@ -3,14 +3,14 @@ import type { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import worker, { type Env } from "../hosted/worker/index";
 import { parseSceneMarkdown } from "../src/excalidraw-file";
-import { parseVisualNoteSpec } from "../src/schema";
+import { parseHostedVisualNoteSpec, parseVisualNoteSpec } from "../src/schema";
 import { SQLiteD1 } from "./support/d1-sqlite";
 
 // TEST-ONLY key pair; its public half is also the env.local LOCAL_JWKS_JSON in hosted/wrangler.jsonc.
 const testKey = JSON.parse(
   readFileSync(new URL("./fixtures/hosted/test-access-key.json", import.meta.url), "utf8"),
 ) as { kid: string; publicJwk: webcrypto.JsonWebKey; privateJwk: webcrypto.JsonWebKey };
-const spec = parseVisualNoteSpec(
+const localSpec = parseVisualNoteSpec(
   JSON.parse(
     readFileSync(
       new URL("./fixtures/hosted/specs/vl-03-cas-refresh.json", import.meta.url),
@@ -18,6 +18,11 @@ const spec = parseVisualNoteSpec(
     ),
   ),
 );
+// The CLI publish payload scrubs source.root to the repo name; that is what the Worker receives.
+const spec = parseHostedVisualNoteSpec({
+  ...localSpec,
+  source: { ...localSpec.source, root: "visual-learning" },
+});
 const scene = parseSceneMarkdown(
   readFileSync(
     new URL("./fixtures/hosted/vl-03-cas-refresh.excalidraw.md", import.meta.url),
@@ -292,6 +297,38 @@ describe("POST /api/publish", () => {
       await call("GET", `/api/projects/${project}`, { token: userToken })
     ).json()) as { project: { commit: string } };
     expect(detail.project.commit).toBe("def5678");
+  });
+
+  test("a path-scrubbed spec is accepted and stored with the repo-name root", async () => {
+    // Given
+    expect(spec.source.root).toBe("visual-learning");
+    // When
+    const response = await publishFixture();
+    // Then
+    expect(response.status).toBe(200);
+    const dump = (await (
+      await call("GET", `/api/projects/${project}/export`, { token: serviceToken })
+    ).json()) as { figures: { spec: { source: { root: string } } }[] };
+    expect(dump.figures[0]?.spec.source.root).toBe("visual-learning");
+  });
+
+  test("a spec with a local absolute source root is 400 and writes nothing", async () => {
+    // Given
+    const leaked = { ...spec, source: { ...spec.source, root: "/Users/x/repo" } };
+    // When
+    const response = await call("POST", "/api/publish", {
+      token: serviceToken,
+      body: {
+        projectId: project,
+        repoName: "visual-learning",
+        commit: null,
+        figures: [{ spec: leaked, scene, verify: [] }],
+      },
+    });
+    // Then
+    expect(response.status).toBe(400);
+    expect(await errorCode(response)).toBe("invalid_input");
+    expect(await db.prepare("SELECT COUNT(*) AS n FROM projects").first<number>("n")).toBe(0);
   });
 
   test("an invalid spec is 400 and writes nothing", async () => {

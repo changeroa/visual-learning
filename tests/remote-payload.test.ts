@@ -6,6 +6,7 @@ import { InputError } from "../src/errors";
 import { encodeSceneToMarkdown, parseSceneMarkdown } from "../src/excalidraw-file";
 import { jsonBytes } from "../src/io";
 import { buildPublishPayload } from "../src/remote-payload";
+import { parseHostedVisualNoteSpec } from "../src/schema";
 
 const fixtures = join(import.meta.dir, "fixtures/hosted/payload");
 const exportRoot = join(fixtures, "export-series");
@@ -75,6 +76,20 @@ describe("publish payload builder", () => {
     expect(payload.figures[0]?.verify).toEqual([]);
     expect(payload.figures[0]?.spec.source.root).toBe("visual-learning");
     expect(JSON.stringify(payload)).not.toContain("/Users/");
+  });
+
+  test("every built figure spec passes the Worker's hosted spec validation", () => {
+    // Given
+    const layouts = [exportRoot, transactionalRoot];
+    for (const root of layouts) {
+      // When
+      const payload = buildPublishPayload({ root, project: "visual-learning" });
+      // Then
+      expect(payload.figures.length).toBeGreaterThan(0);
+      for (const figure of payload.figures) {
+        expect(parseHostedVisualNoteSpec(figure.spec).source.root).toBe("visual-learning");
+      }
+    }
   });
 
   test("builds the same payload from the transactional layout", () => {

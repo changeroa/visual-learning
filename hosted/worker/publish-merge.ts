@@ -2,7 +2,7 @@ import { InputError } from "../../src/errors";
 import type { ExcalidrawScene } from "../../src/excalidraw-file";
 import { applyRefreshToScene } from "../../src/refresh-apply";
 import { buildReferenceGraph } from "../../src/refresh-scene";
-import { parseVisualNoteSpec } from "../../src/schema";
+import { parseHostedVisualNoteSpec } from "../../src/schema";
 import {
   commitScene,
   createFigure,
@@ -23,7 +23,7 @@ export type PublishFigureResult = {
 
 function parseSpec(input: unknown) {
   try {
-    return parseVisualNoteSpec(input);
+    return parseHostedVisualNoteSpec(input);
   } catch (error) {
     throw new InputError("invalid publish spec", { cause: error });
   }

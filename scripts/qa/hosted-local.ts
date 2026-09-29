@@ -92,8 +92,13 @@ let server: ChildProcess | null = null;
 let serverLog = "";
 let proxy: ReturnType<typeof Bun.serve> | null = null;
 let passed = 0;
+// Every running command child; each leads its own process group so teardown can stop helpers
+// it spawned (a CLI child with HOME=<temp home> must not outlive the temp HOME).
+const children = new Set<{ readonly pid: number; readonly exited: Promise<number> }>();
+let tearingDown = false;
 
 function temp(label: string): string {
+  if (tearingDown) throw new Error("tearing down; no new temp dirs");
   // realpath: macOS tmpdir sits behind the /var symlink, which pull's --out guard rejects.
   const dir = realpathSync(mkdtempSync(join(tmpdir(), `hosted-local-${label}-`)));
   tempDirs.push(dir);
@@ -108,6 +113,7 @@ function assert(ok: boolean, name: string, detail = ""): void {
 }
 
 async function run(command: string[], env: Record<string, string>, stdin?: string): Promise<Run> {
+  if (tearingDown) throw new Error(`tearing down; not starting ${command.join(" ")}`);
   const child = Bun.spawn(command, {
     cwd: repoRoot,
     env,
@@ -116,13 +122,19 @@ async function run(command: string[], env: Record<string, string>, stdin?: strin
     stderr: "pipe",
     timeout: commandTimeoutMs,
     killSignal: "SIGKILL",
+    detached: true,
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { exitCode, stdout, stderr };
+  children.add(child);
+  try {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { exitCode, stdout, stderr };
+  } finally {
+    children.delete(child);
+  }
 }
 
 // Parses a --json command's stdout; a missing or broken document fails with the command's stderr.
@@ -198,18 +210,59 @@ async function waitForServerExit(child: ChildProcess): Promise<void> {
   }
 }
 
-function cleanupSync(): void {
+function signalGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // The group already exited.
+  }
+}
+
+async function waitForChildExit(child: { readonly pid: number; readonly exited: Promise<number> }) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout("timeout"), 10_000);
+  });
+  const outcome = await Promise.race([child.exited, timeout]);
+  clearTimeout(timer);
+  if (outcome === "timeout") {
+    signalGroup(child.pid, "SIGKILL");
+    await child.exited;
+  }
+}
+
+// Stops the proxy, the dev server group, and every command child's group; waits for them to
+// exit, SIGKILLs any helper still in those groups, and only then removes the temp dirs, so no
+// child can recreate a temp dir (for example a temp HOME cache) after it is deleted.
+async function teardown(): Promise<void> {
+  tearingDown = true;
   proxy?.stop(true);
   proxy = null;
+  const running = [...children];
+  for (const child of running) signalGroup(child.pid, "SIGTERM");
+  const serverChild = server;
   stopServer();
+  await Promise.all([
+    ...running.map((child) => waitForChildExit(child)),
+    serverChild === null ? Promise.resolve() : waitForServerExit(serverChild),
+  ]);
+  for (const child of running) signalGroup(child.pid, "SIGKILL");
+  if (serverChild?.pid !== undefined) signalGroup(serverChild.pid, "SIGKILL");
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 }
 
+let signalTeardown: Promise<void> | null = null;
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(signal, () => {
+    if (signalTeardown !== null) return;
     console.error(`hosted-local: ${signal} received; tearing down`);
-    cleanupSync();
-    process.exit(130);
+    signalTeardown = teardown().then(
+      () => process.exit(130),
+      (error: unknown) => {
+        console.error(`hosted-local: teardown after ${signal} failed: ${String(error)}`);
+        process.exit(1);
+      },
+    );
   });
 }
 
@@ -790,13 +843,13 @@ try {
 } catch (error) {
   failure = error;
 }
+// A signal owns the teardown and exits with 130; main's resulting failure is not the outcome.
+if (signalTeardown !== null) await signalTeardown;
 if (args.keep !== undefined) {
   mkdirSync(resolve(args.keep), { recursive: true });
   writeFileSync(join(resolve(args.keep), "dev-server.log"), serverLog);
 }
-const child = server;
-cleanupSync();
-if (child !== null) await waitForServerExit(child);
+await teardown();
 rmSync(stateDir, { recursive: true, force: true });
 const leftover = listeners();
 if (leftover !== "") failure ??= new Error(`port ${port} still has listeners: ${leftover}`);
