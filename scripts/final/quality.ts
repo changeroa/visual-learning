@@ -346,15 +346,17 @@ requireTrue(
 const mutationCallPattern =
   /\b(?:writeFileSync|appendFileSync|renameSync|unlinkSync|rmSync|mkdirSync)\s*\(/;
 const reviewedMutationModules: Readonly<Record<string, string>> = {
-  "src/bootstrap.ts": "vault and source validated via path-guard before any staging write",
+  "src/bootstrap.ts": "root and source validated via path-guard before any staging write",
   "src/bootstrap-notes.ts":
     "writes fixed relative note paths under the slug-validated project base",
   "src/bundle-transaction.ts": "journal writes confined to the validated artifact history root",
   "src/project-publish.ts":
-    "stage-then-rename publication inside the validated vault/project subtree",
+    "stage-then-rename publication inside the validated root/project subtree",
   "src/refresh.ts": "CAS-guarded working-copy writes through transaction paths",
+  "src/session-export.ts":
+    "stages under a mkdtemp dir inside the realpath-validated session root, slug-validated project",
   "src/transaction-bootstrap.ts":
-    "history root derived from transactionPaths on validated vault plus slug",
+    "history root derived from transactionPaths on validated root plus slug",
   "src/transaction-fs.ts": "fs primitives module used only with transaction-validated paths",
   "src/transaction-lock.ts": "lock markers under the per-artifact lock root",
 };
@@ -364,6 +366,8 @@ const mutatingModules = sources
 const unreviewedMutations = mutatingModules.filter((file) => !(file in reviewedMutationModules));
 const operationsSource = readFileSync(join(packageRoot, "src", "operations.ts"), "utf8");
 const bootstrapSource = readFileSync(join(packageRoot, "src", "bootstrap.ts"), "utf8");
+const pathGuardSource = readFileSync(join(packageRoot, "src", "path-guard.ts"), "utf8");
+const sessionExportSource = readFileSync(join(packageRoot, "src", "session-export.ts"), "utf8");
 const pathSafetyReview = {
   descriptorSafeHelpers: "src/safe-path.ts -> scripts/internal/safe-fs.py",
   descriptorSafeHelpersPresent:
@@ -371,11 +375,16 @@ const pathSafetyReview = {
     existsSync(join(packageRoot, "scripts", "internal", "safe-fs.py")),
   mutatingModules,
   unreviewedMutations,
-  vaultGuardEnforcedAtEntry:
-    operationsSource.includes("ensureMatchingVault") &&
+  rootGuardEnforcedAtEntry:
+    pathGuardSource.includes("export function ensureRealDirectory") &&
+    pathGuardSource.includes("isSymbolicLink") &&
+    operationsSource.includes("ensureRealDirectory") &&
     operationsSource.includes("slugSchema") &&
     operationsSource.includes("safeCreateFile") &&
-    bootstrapSource.includes("ensureMatchingVault"),
+    bootstrapSource.includes("ensureRealDirectory"),
+  exportRootValidatedAtEntry:
+    sessionExportSource.includes("realDirectory(input.sessionRoot") &&
+    sessionExportSource.includes("projectSlug.parse(input.project)"),
   cliRouterPerformsNoDirectWrites: !mutationCallPattern.test(
     readFileSync(join(packageRoot, "src", "cli.ts"), "utf8"),
   ),
@@ -383,7 +392,8 @@ const pathSafetyReview = {
 requireTrue(
   pathSafetyReview.descriptorSafeHelpersPresent &&
     unreviewedMutations.length === 0 &&
-    pathSafetyReview.vaultGuardEnforcedAtEntry &&
+    pathSafetyReview.rootGuardEnforcedAtEntry &&
+    pathSafetyReview.exportRootValidatedAtEntry &&
     pathSafetyReview.cliRouterPerformsNoDirectWrites,
   "path-safety review anchors must hold",
 );
@@ -392,13 +402,11 @@ const rendererModules = [
   "src/renderer-plan.ts",
   "src/refresh-elements.ts",
   "src/refresh-scene.ts",
-  "src/renderer-live.ts",
   "src/scene-bootstrap.ts",
   "src/scene-links.ts",
   "src/svg-gallery.ts",
 ];
 const refreshSceneSource = readFileSync(join(packageRoot, "src", "refresh-scene.ts"), "utf8");
-const rendererLiveSource = readFileSync(join(packageRoot, "src", "renderer-live.ts"), "utf8");
 const rendererDecomposition = {
   modules: rendererModules,
   modulesPresent: rendererModules.every((path) => existsSync(join(packageRoot, path))),
@@ -409,7 +417,6 @@ const rendererDecomposition = {
   ),
   buildsOwnershipReferenceGraph:
     refreshSceneSource.includes("ReferenceGraph") && refreshSceneSource.includes("ownershipOf"),
-  usesAutomateAppendUpdateCustomData: rendererLiveSource.includes("addAppendUpdateCustomData"),
   preservationTestsPresent:
     existsSync(join(packageRoot, "tests", "preservation.test.ts")) &&
     existsSync(join(packageRoot, "tests", "cross-ownership-bindings.test.ts")),
@@ -418,7 +425,6 @@ requireTrue(
   rendererDecomposition.modulesPresent &&
     rendererDecomposition.largestModuleLines <= maxSourceLines &&
     rendererDecomposition.buildsOwnershipReferenceGraph &&
-    rendererDecomposition.usesAutomateAppendUpdateCustomData &&
     rendererDecomposition.preservationTestsPresent,
   "renderer must stay decomposed with ownership-aware selective refresh",
 );

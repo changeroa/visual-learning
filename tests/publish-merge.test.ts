@@ -15,17 +15,17 @@ import {
   type ExcalidrawScene,
   parseSceneMarkdown,
 } from "../src/excalidraw-file";
-import { parseVisualNoteSpec, type VisualNoteSpec } from "../src/schema";
+import { parseHostedVisualNoteSpec, type VisualNoteSpec } from "../src/schema";
 import { SQLiteD1 } from "./support/d1-sqlite";
 
-const spec = parseVisualNoteSpec(
-  JSON.parse(
-    readFileSync(
-      new URL("./fixtures/hosted/specs/vl-03-cas-refresh.json", import.meta.url),
-      "utf8",
-    ),
-  ),
-);
+const fixtureSpec = JSON.parse(
+  readFileSync(new URL("./fixtures/hosted/specs/vl-03-cas-refresh.json", import.meta.url), "utf8"),
+) as { source: { root: string } };
+// The Worker receives the CLI's path-scrubbed payload: source.root is the repo name.
+const spec = parseHostedVisualNoteSpec({
+  ...fixtureSpec,
+  source: { ...fixtureSpec.source, root: "visual-learning" },
+});
 const fixtureScene = parseSceneMarkdown(
   readFileSync(
     new URL("./fixtures/hosted/vl-03-cas-refresh.excalidraw.md", import.meta.url),
@@ -50,7 +50,7 @@ function humanElement(id: string, overrides: Partial<ExcalidrawElement> = {}): E
 }
 
 function revisionTwo(): VisualNoteSpec {
-  return parseVisualNoteSpec({ ...spec, revision: 2, title: `${spec.title} v2` });
+  return parseHostedVisualNoteSpec({ ...spec, revision: 2, title: `${spec.title} v2` });
 }
 
 async function counter(): Promise<number | null> {
@@ -162,7 +162,7 @@ describe("hosted publish merge", () => {
         expectedToken: null,
       }),
     ).toMatchObject({ outcome: "committed" });
-    const nextSpec = parseVisualNoteSpec({
+    const nextSpec = parseHostedVisualNoteSpec({
       ...spec,
       revision: 2,
       nodes: spec.nodes.filter((node) => node.semanticId !== removedSemanticId),
@@ -195,6 +195,16 @@ describe("hosted publish merge", () => {
       body: "body must survive publish",
       orphaned: true,
     });
+  });
+
+  test("a spec with a local absolute source root is InputError and stores nothing", async () => {
+    // Given
+    const leaked = { ...spec, source: { ...spec.source, root: "/Users/x/repo" } };
+    // When
+    const attempt = publish(leaked);
+    // Then
+    await expect(attempt).rejects.toBeInstanceOf(InputError);
+    expect(await readFigure(db, project, spec.artifactId)).toBeNull();
   });
 
   test("invalid dangling-edge spec is InputError and leaves the figure counter unchanged", async () => {

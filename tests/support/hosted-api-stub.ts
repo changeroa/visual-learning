@@ -17,7 +17,7 @@ import { InputError } from "../../src/errors";
 import { type ExcalidrawScene, parseSceneMarkdown } from "../../src/excalidraw-file";
 import { applyRefreshToScene } from "../../src/refresh-apply";
 import { buildReferenceGraph } from "../../src/refresh-scene";
-import { parseVisualNoteSpec } from "../../src/schema";
+import { parseHostedVisualNoteSpec } from "../../src/schema";
 import { SQLiteD1 } from "./d1-sqlite";
 
 // In-memory stand-in for the todo 6 Worker API. It reuses the real D1 atlas store over the
@@ -129,7 +129,7 @@ function verifyRuns(value: unknown): VerifyRun[] {
 async function publish(db: SQLiteD1, input: PublishInput) {
   const results = [];
   for (const figure of input.figures) {
-    const spec = parseVisualNoteSpec(figure.spec);
+    const spec = parseHostedVisualNoteSpec(figure.spec);
     const project = input.projectId;
     const current = await readFigure(db, project, spec.artifactId);
     let outcome: "created" | "refreshed" | "conflict";
@@ -299,14 +299,16 @@ function serveStatic(distDir: string, pathname: string): Response {
 export function seedSpecAndScene(): { spec: unknown; scene: ExcalidrawScene } {
   const fixtures = join(repoRoot, "tests/fixtures/hosted");
   const markdown = readFileSync(join(fixtures, `${stubArtifactId}.excalidraw.md`), "utf8");
-  const spec: unknown = JSON.parse(
-    readFileSync(join(fixtures, `specs/${stubArtifactId}.json`), "utf8"),
-  );
+  const spec = JSON.parse(readFileSync(join(fixtures, `specs/${stubArtifactId}.json`), "utf8")) as {
+    source: { root: string };
+  };
+  // Scrub the local root like the CLI publish payload does; the Worker rejects absolute roots.
+  spec.source.root = stubProjectId;
   return { spec, scene: parseSceneMarkdown(markdown).scene };
 }
 
 export function seedVerifyRuns(spec: unknown): VerifyRun[] {
-  const parsed = parseVisualNoteSpec(spec);
+  const parsed = parseHostedVisualNoteSpec(spec);
   return (parsed.learning?.verify ?? []).map((step, index) =>
     index % 2 === 0
       ? {
@@ -345,7 +347,7 @@ export async function startHostedApiStub(
   const distDir = resolve(options.distDir ?? join(repoRoot, "hosted/dist"));
   if (options.seed ?? true) {
     const { spec, scene } = seedSpecAndScene();
-    const parsed = parseVisualNoteSpec(spec);
+    const parsed = parseHostedVisualNoteSpec(spec);
     await publish(db, {
       projectId: stubProjectId,
       repoName: stubProjectId,

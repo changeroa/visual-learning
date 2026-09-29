@@ -12,6 +12,7 @@
 //   eval "$(bun scripts/qa/hosted-dev-auth.ts)"
 //   bun scripts/qa/hosted-ui.ts --base-url http://127.0.0.1:8787 --auth-cookie "$CF_AUTHORIZATION"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
@@ -41,9 +42,7 @@ const { values: args } = parseArgs({
     out: { type: "string" },
   },
 });
-const outDir = resolve(
-  args.out ?? join(repoRoot, ".omo/evidence/20260929-drop-obsidian/task-11-ui"),
-);
+const outDir = resolve(args.out ?? join(tmpdir(), "visual-atlas-hosted-ui"));
 const authCookie = args["auth-cookie"];
 const checks: Check[] = [];
 const network: { view: string; url: string }[] = [];

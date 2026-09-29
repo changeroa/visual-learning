@@ -5,54 +5,12 @@ import { sha256 } from "../../src/io";
 
 export const DENY_NETWORK_PROFILE = "(version 1) (allow default) (deny network*)\n";
 
-export const OFFLINE_CLI_STUB = `#!/bin/sh
-# Test-only offline Obsidian CLI stub: filesystem-only canned responses, no app launch, no network.
-key="\${2:-}"
-case "$key" in
-  vault)
-    case "\${3:-}" in
-      info=path)
-        printf '%s\\n' "\${OFFLINE_STUB_VAULT_PATH:?offline stub requires OFFLINE_STUB_VAULT_PATH}"
-        exit 0
-        ;;
-    esac
-    ;;
-  plugins:enabled)
-    printf '%s\\n' '[{"id":"obsidian-excalidraw-plugin","version":"2.26.4"}]'
-    exit 0
-    ;;
-  eval)
-    printf '%s\\n' '{"sentinel":"VISUAL_NOTE_EXCALIDRAW_READY","loaded":true,"id":"obsidian-excalidraw-plugin","automatePresent":true,"getAPI":true,"scriptEnginePresent":true}'
-    exit 0
-    ;;
-  open)
-    exit 0
-    ;;
-esac
-printf 'offline-obsidian-cli: unsupported command: %s\\n' "$key" >&2
-exit 1
-`;
-
-const stubHandlers = ["info=path", "plugins:enabled", "eval", "open"] as const;
-const networkTools = /\/usr\/bin\/curl|\/usr\/bin\/nc|\/usr\/sbin\/networksetup|\bwget\b/;
-
 export function validateProfileContent(text: string): { valid: boolean; reason?: string } {
   if (text === DENY_NETWORK_PROFILE) return { valid: true };
   return {
     valid: false,
     reason: "profile must be exactly (version 1) (allow default) (deny network*)",
   };
-}
-
-export function validateStubScript(text: string): { valid: boolean; reason?: string } {
-  if (!text.startsWith("#!/bin/sh\n"))
-    return { valid: false, reason: "stub must be a /bin/sh script" };
-  for (const handler of stubHandlers) {
-    if (!text.includes(handler)) return { valid: false, reason: `stub must handle ${handler}` };
-  }
-  if (networkTools.test(text))
-    return { valid: false, reason: "stub must not invoke network tools" };
-  return { valid: true };
 }
 
 export type DenialClassification = "denied-operation-not-permitted" | "denied" | "not-denied";
@@ -74,10 +32,6 @@ export function classifyNetworkDenial(input: {
     return "denied";
   }
   return "not-denied";
-}
-
-export function buildRegistryJson(verifiedVaultId: string, vaultPath: string): string {
-  return `${JSON.stringify({ vaults: { [verifiedVaultId]: { path: vaultPath } } }, null, 2)}\n`;
 }
 
 export type SentinelRecord = {
