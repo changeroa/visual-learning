@@ -74,27 +74,172 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-// Resolves once the page-side predicate returns a truthy value; rejects at the deadline.
-function waitFor<T>(view: Bun.WebView, label: string, predicate: string): Promise<T> {
-  const script = `new Promise((resolve, reject) => {
-    const deadline = Date.now() + ${waitMs};
-    const check = () => {
-      let value;
-      try { value = (${predicate})(); } catch (error) { value = undefined; }
-      if (value) return resolve(value);
-      if (Date.now() > deadline) return reject(new Error(${JSON.stringify(`timeout: ${label}`)}));
-      setTimeout(check, 25);
-    };
-    check();
-  })`;
-  return withTimeout(view.evaluate<T>(script), waitMs + 5_000, label);
+// Waits are event-driven and registered before the action that triggers them; no polling.
+// - The SPA announces its moments as `visual-atlas:<type>` CustomEvents after React commits the
+//   matching render (hosted/web/app-events.ts). qaRuntime is installed into every document before
+//   any page script runs (Page.addScriptToEvaluateOnNewDocument) and records those events from
+//   document start, so a wait taken before a navigation or reload cannot miss its event.
+// - DOM-only changes (tab and toggle clicks) use a MutationObserver armed before the click.
+// The only timers are the bounded timeouts that reject a wait with its label.
+const appEventTypes = [
+  "loaded",
+  "load-failed",
+  "ready",
+  "viewport",
+  "dirty",
+  "saved",
+  "conflict",
+  "save-failed",
+  "draft-restored",
+  "note-saved",
+  "note-conflict",
+  "note-failed",
+];
+const qaRuntime = `(() => {
+  if (window.__visualAtlasQa !== undefined) return;
+  const log = [];
+  const listeners = new Set();
+  for (const type of ${JSON.stringify(appEventTypes)})
+    window.addEventListener("visual-atlas:" + type, (event) => {
+      const entry = { type, detail: event.detail ?? {} };
+      log.push(entry);
+      for (const listener of [...listeners]) listener(entry);
+    });
+  const matches = (detail, match) =>
+    Object.entries(match).every(([key, value]) => detail[key] === value);
+  const armed = new Map();
+  window.__visualAtlasQa = {
+    docId: Math.random().toString(36).slice(2),
+    mark: () => log.length,
+    // Resolves with the first matching event recorded at index >= since; a failOn event first
+    // rejects with its detail.
+    event(since, type, match, failOn, failMatch, ms, label) {
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const settle = (finish, value) => {
+          if (settled) return;
+          settled = true;
+          listeners.delete(onEntry);
+          clearTimeout(timer);
+          finish(value);
+        };
+        const onEntry = (entry) => {
+          if (entry.type === type && matches(entry.detail, match)) settle(resolve, entry.detail);
+          else if (failOn.includes(entry.type) && matches(entry.detail, failMatch))
+            settle(reject, new Error(label + ": got visual-atlas:" + entry.type + " " +
+              JSON.stringify(entry.detail)));
+        };
+        const timer = setTimeout(() => settle(reject, new Error("timeout after " + ms + "ms: " +
+          label + " (events since mark: " + log.slice(since).map((e) => e.type).join(", ") +
+          ")")), ms);
+        listeners.add(onEntry);
+        for (const entry of log.slice(since)) onEntry(entry);
+      });
+    },
+    // Observes DOM mutations from now on; resolves with the predicate's first truthy value.
+    arm(id, predicate) {
+      const entry = { done: false, value: undefined, wake: () => {} };
+      entry.observer = new MutationObserver(() => {
+        let value;
+        try { value = predicate(); } catch { value = undefined; }
+        if (!value) return;
+        entry.observer.disconnect();
+        entry.done = true;
+        entry.value = value;
+        entry.wake();
+      });
+      entry.observer.observe(document, {
+        subtree: true, childList: true, attributes: true, characterData: true,
+      });
+      armed.set(id, entry);
+      return true;
+    },
+    settle(id, ms, label) {
+      const entry = armed.get(id);
+      armed.delete(id);
+      return new Promise((resolve, reject) => {
+        if (entry.done) return resolve(entry.value);
+        const timer = setTimeout(() => {
+          entry.observer.disconnect();
+          reject(new Error("timeout after " + ms + "ms: " + label));
+        }, ms);
+        entry.wake = () => {
+          clearTimeout(timer);
+          resolve(entry.value);
+        };
+      });
+    },
+  };
+})();`;
+
+type Pending<T> = { done: () => Promise<T> };
+type EventWait = {
+  match?: Json;
+  failOn?: string[];
+  failMatch?: Json;
+  // The trigger replaces the document (navigate/reload): match from the new document's start.
+  navigation?: boolean;
+};
+
+// Registers a wait for `visual-atlas:<type>` before the caller triggers it.
+async function expectEvent<T = Json>(
+  view: Bun.WebView,
+  label: string,
+  type: string,
+  options: EventWait = {},
+): Promise<Pending<T>> {
+  const navigation = options.navigation === true;
+  const docId = await view.evaluate<string | null>("window.__visualAtlasQa?.docId ?? null");
+  const since = navigation ? 0 : await view.evaluate<number>("window.__visualAtlasQa.mark()");
+  const script = `(() => {
+    const qa = window.__visualAtlasQa;
+    const label = ${JSON.stringify(label)};
+    if (qa === undefined) throw new Error(label + ": QA runtime missing in this document");
+    if ((qa.docId === ${JSON.stringify(docId)}) === ${navigation})
+      throw new Error(label + (${navigation} ? ": the document was not replaced" :
+        ": the document changed"));
+    return qa.event(${since}, ${JSON.stringify(type)}, ${JSON.stringify(options.match ?? {})},
+      ${JSON.stringify(options.failOn ?? [])}, ${JSON.stringify(options.failMatch ?? {})},
+      ${waitMs}, label);
+  })()`;
+  return { done: () => withTimeout(view.evaluate<T>(script), waitMs + 5_000, label) };
 }
 
-const editorReady = `() => {
-  const editor = window.visualAtlasEditor;
-  return editor !== undefined && editor.getSceneElements().length > 0 &&
-    document.querySelector('[data-testid="save-status"]') !== null;
-}`;
+let armedCount = 0;
+
+// Arms a MutationObserver for a page-side predicate before the caller triggers the change.
+async function expectDom<T>(
+  view: Bun.WebView,
+  label: string,
+  predicate: string,
+): Promise<Pending<T>> {
+  armedCount += 1;
+  const id = JSON.stringify(`wait-${armedCount}`);
+  await view.evaluate(`window.__visualAtlasQa.arm(${id}, ${predicate})`);
+  const script = `window.__visualAtlasQa.settle(${id}, ${waitMs}, ${JSON.stringify(label)})`;
+  return { done: () => withTimeout(view.evaluate<T>(script), waitMs + 5_000, label) };
+}
+
+// Registration completes before the action runs; then the action's outcome is awaited.
+async function after<T>(pending: Promise<Pending<T>>, action: () => Promise<unknown>): Promise<T> {
+  const wait = await pending;
+  await action();
+  return wait.done();
+}
+
+const loaded = (key: string): EventWait => ({
+  match: { key },
+  failOn: ["load-failed"],
+  failMatch: { key },
+});
+// The figure workspace placed its initial (readable) viewport.
+const figureReady: EventWait = { match: { project: qaProject, artifact }, failOn: ["load-failed"] };
+const ready: EventWait = { ...figureReady, navigation: true };
+const saveOk: EventWait = { failOn: ["conflict", "save-failed"] };
+const saveConflict: EventWait = { failOn: ["saved", "save-failed"] };
+const viewportPlaced = (mode: string): EventWait => ({ match: { mode } });
+const editPressed = `() => document.querySelector('[data-testid="edit-toggle"]')
+  ?.getAttribute("aria-pressed") === "true"`;
 
 type ViewportReport = {
   zoom: number;
@@ -115,13 +260,8 @@ type ViewportReport = {
 // label size is appState.zoom.value x the smallest agent node-label fontSize in the scene.
 // Overlap method: the figure's on-screen bounds clipped to the canvas (what the reader can see of
 // the figure) are intersected with every visible control rectangle inside the Excalidraw host.
-async function viewportReport(view: Bun.WebView, label: string): Promise<ViewportReport> {
-  await waitFor(
-    view,
-    `${label}: initial viewport applied`,
-    `() => document.querySelector('[data-testid="excalidraw-host"]')?.dataset.initialViewport ===
-      "applied"`,
-  );
+// Callers first await the `ready` or `viewport` event of the view they measure.
+function viewportReport(view: Bun.WebView): Promise<ViewportReport> {
   return view.evaluate<ViewportReport>(`(() => {
     const editor = window.visualAtlasEditor;
     const state = editor.getAppState();
@@ -167,44 +307,77 @@ async function viewportReport(view: Bun.WebView, label: string): Promise<Viewpor
   })()`);
 }
 
+// Plan todo 11: the load view is the readable default (node labels at >= 12 CSS px).
 function checkReadableLabels(width: number, report: ViewportReport): void {
   check(
-    `${width}: node label text renders at >= 12 CSS px (zoom x smallest node-label fontSize)`,
+    `${width}: load view is the readable default - node labels render at >= 12 CSS px`,
     report.labels > 0 && report.labelPx >= 12 - 1e-6,
     `${report.zoom.toFixed(3)} x ${report.labelFont}px = ${report.labelPx.toFixed(1)}px`,
   );
   check(
-    `${width}: node labels are on screen in the initial viewport`,
+    `${width}: node labels are on screen in the load view`,
     report.visibleLabels > 0,
     `${report.visibleLabels}/${report.labels} labels fully visible`,
   );
 }
 
-// 전체 보기 (fit-all) must bring every node label's bounding box inside the canvas viewport.
+type Box = [number, number, number, number];
+
+// Plan todo 11: 전체 보기 fits the whole figure - the bounds of every scene element (arrow and line
+// points included) lie inside the canvas viewport.
 async function checkFitAll(view: Bun.WebView, width: number): Promise<void> {
-  await view.click('[data-testid="zoom-fit"]');
-  const report = await view.evaluate<{ labels: number; outside: string[]; zoom: number }>(`(() => {
+  await after(
+    expectEvent(view, `${width}: 전체 보기 applied`, "viewport", viewportPlaced("fit")),
+    () => view.click('[data-testid="zoom-fit"]'),
+  );
+  const report = await view.evaluate<{ elements: number; figure: Box; canvas: Box; zoom: number }>(
+    `(() => {
     const editor = window.visualAtlasEditor;
     const state = editor.getAppState();
     const zoom = state.zoom.value;
     const canvas = document.querySelector('[data-testid="excalidraw-host"] canvas')
       .getBoundingClientRect();
-    const labels = editor.getSceneElements().filter((e) => e.type === "text" &&
-      e.customData?.elementRole === "node-label");
-    const outside = labels.filter((e) => {
-      const left = canvas.left + (e.x + state.scrollX) * zoom;
-      const top = canvas.top + (e.y + state.scrollY) * zoom;
-      return left < canvas.left || top < canvas.top || left + e.width * zoom > canvas.right ||
-        top + e.height * zoom > canvas.bottom;
-    }).map((e) => e.customData?.semanticId ?? e.id);
-    return { labels: labels.length, outside, zoom };
-  })()`);
+    const elements = editor.getSceneElements();
+    const xs = elements.flatMap((e) =>
+      e.points ? e.points.map((p) => e.x + p[0]) : [e.x, e.x + e.width]);
+    const ys = elements.flatMap((e) =>
+      e.points ? e.points.map((p) => e.y + p[1]) : [e.y, e.y + e.height]);
+    const figure = [
+      canvas.left + (Math.min(...xs) + state.scrollX) * zoom,
+      canvas.top + (Math.min(...ys) + state.scrollY) * zoom,
+      canvas.left + (Math.max(...xs) + state.scrollX) * zoom,
+      canvas.top + (Math.max(...ys) + state.scrollY) * zoom,
+    ];
+    return { elements: elements.length, figure,
+      canvas: [canvas.left, canvas.top, canvas.right, canvas.bottom], zoom };
+  })()`,
+  );
+  const [left, top, right, bottom] = report.figure;
+  const [canvasLeft, canvasTop, canvasRight, canvasBottom] = report.canvas;
   check(
-    `${width}: 전체 보기 puts every node label's bounding box inside the canvas viewport`,
-    report.labels > 0 && report.outside.length === 0,
-    `${report.labels - report.outside.length}/${report.labels} inside at zoom ${report.zoom.toFixed(
-      3,
-    )}${report.outside.length > 0 ? `, outside: ${report.outside.join(", ")}` : ""}`,
+    `${width}: 전체 보기 fits the whole figure (every element's bounds) inside the canvas viewport`,
+    report.elements > 0 &&
+      left >= canvasLeft - 0.5 &&
+      top >= canvasTop - 0.5 &&
+      right <= canvasRight + 0.5 &&
+      bottom <= canvasBottom + 0.5,
+    `${report.elements} elements, figure ${JSON.stringify(report.figure.map(Math.round))} in canvas ${JSON.stringify(
+      report.canvas.map(Math.round),
+    )} at zoom ${report.zoom.toFixed(3)}`,
+  );
+}
+
+// 처음 보기 returns from any other viewport to the readable load view.
+async function checkReset(view: Bun.WebView, width: number, load: ViewportReport): Promise<void> {
+  await after(
+    expectEvent(view, `${width}: 처음 보기 applied`, "viewport", viewportPlaced("reset")),
+    () => view.click('[data-testid="zoom-reset"]'),
+  );
+  const report = await viewportReport(view);
+  check(
+    `${width}: 처음 보기 returns to the readable load view`,
+    Math.abs(report.zoom - load.zoom) < 1e-6 && report.labelPx >= 12 - 1e-6,
+    `zoom ${load.zoom.toFixed(3)} -> ${report.zoom.toFixed(3)}, labels ${report.labelPx.toFixed(1)}px`,
   );
 }
 
@@ -274,6 +447,8 @@ async function openView(label: string, baseUrl: string, width: number, height: n
       deviceScaleFactor: 1,
       mobile: true,
     });
+  await view.cdp("Page.enable");
+  await view.cdp("Page.addScriptToEvaluateOnNewDocument", { source: qaRuntime });
   await view.cdp("Network.enable");
   await view.cdp("Log.enable");
   view.addEventListener("Network.requestWillBeSent", (event: MessageEvent) => {
@@ -440,32 +615,35 @@ async function main(): Promise<void> {
 
     // Tab A: list -> grid -> figure.
     const tabA = await openView("A", baseUrl, 1440, 900);
+    const homeProjects = await expectEvent(tabA, "project list loaded", "loaded", {
+      ...loaded("projects"),
+      navigation: true,
+    });
+    const homeMe = await expectEvent(tabA, "/api/me loaded", "loaded", {
+      ...loaded("me"),
+      navigation: true,
+    });
     await tabA.navigate(`${baseUrl}/`);
-    await waitFor(
-      tabA,
-      "project list and email",
-      `() => document.querySelector('a[href="/p/${qaProject}"]') !== null &&
-        document.querySelector('[data-testid="user-email"]').textContent.includes("@")`,
-    );
+    await homeProjects.done();
+    await homeMe.done();
     const email = await tabA.evaluate<string>(
       `document.querySelector('[data-testid="user-email"]').textContent`,
     );
     check("header shows the /api/me email", email === expectedEmail, email);
     await shot(tabA, "01-home-1440");
-    await tabA.click(`a[href="/p/${qaProject}"]`);
-    await waitFor(
-      tabA,
-      "figure grid",
-      `() => document.querySelector('a[href="${figureRoute}"]') !== null`,
+    await after(
+      expectEvent(tabA, "figure grid loaded", "loaded", loaded(`project:${qaProject}`)),
+      () => tabA.click(`a[href="/p/${qaProject}"]`),
     );
     const gridText = await tabA.evaluate<string>(
       `document.querySelector('[data-testid="figure-grid"]').textContent`,
     );
     check("figure grid shows the exact artifactId", gridText.includes(artifact));
     await shot(tabA, "02-grid-1440");
-    await tabA.click(`a[href="${figureRoute}"]`);
-    await waitFor(tabA, "editor ready", editorReady);
-    const desktopView = await viewportReport(tabA, "1440");
+    await after(expectEvent(tabA, "editor ready", "ready", figureReady), () =>
+      tabA.click(`a[href="${figureRoute}"]`),
+    );
+    const desktopView = await viewportReport(tabA);
     checkReadableLabels(1440, desktopView);
     check(
       "1440: initial viewport fits the figure width (zoom capped at 100%)",
@@ -499,28 +677,30 @@ async function main(): Promise<void> {
     await shot(tabA, "03-figure-1440");
     await checkFitAll(tabA, 1440);
     await shot(tabA, "03b-fit-all-1440");
-    await tabA.click('[data-testid="zoom-reset"]');
+    await checkReset(tabA, 1440, desktopView);
 
     // Tab B loads the same token before A saves (the stale writer).
     const tabB = await openView("B", baseUrl, 1440, 900);
-    await tabB.navigate(`${baseUrl}${figureRoute}`);
-    await waitFor(tabB, "tab B editor ready", editorReady);
-    await tabB.click('[data-testid="edit-toggle"]');
+    await after(expectEvent(tabB, "tab B editor ready", "ready", ready), () =>
+      tabB.navigate(`${baseUrl}${figureRoute}`),
+    );
+    await after(expectDom(tabB, "tab B edit mode", editPressed), () =>
+      tabB.click('[data-testid="edit-toggle"]'),
+    );
 
     // A draws and saves with Cmd+S; a reload shows the element.
     const loadedToken = (await saveStatus(tabA)).token;
-    await tabA.click('[data-testid="edit-toggle"]');
+    await after(expectDom(tabA, "A edit mode", editPressed), () =>
+      tabA.click('[data-testid="edit-toggle"]'),
+    );
     const editMode = await tabA.evaluate<boolean>(
       "window.visualAtlasEditor.getAppState().viewModeEnabled === false",
     );
     check("편집 toggle enters edit mode", editMode);
     const rectA = `qa-rect-a-${runId}`;
     const rectB = `qa-rect-b-${runId}`;
-    await tabA.evaluate(drawScript(rectangle(rectA, 80, -260, "#e03131")));
-    await waitFor(
-      tabA,
-      "A dirty",
-      `() => document.querySelector('[data-testid="save-status"]').dataset.dirty === "true"`,
+    await after(expectEvent(tabA, "A dirty", "dirty"), () =>
+      tabA.evaluate(drawScript(rectangle(rectA, 80, -260, "#e03131"))),
     );
     const draftWhileDirty = await tabA.evaluate<string | null>(
       `window.localStorage.getItem(${JSON.stringify(draftKey)})`,
@@ -529,12 +709,8 @@ async function main(): Promise<void> {
       "unsaved change is kept in the localStorage draft",
       draftWhileDirty?.includes(rectA) === true,
     );
-    await tabA.press("s", { modifiers: ["Meta"] });
-    await waitFor(
-      tabA,
-      "A saved",
-      `() => { const s = document.querySelector('[data-testid="save-status"]').dataset;
-        return s.dirty === "false" && s.token !== ${JSON.stringify(loadedToken)}; }`,
+    await after(expectEvent(tabA, "A saved", "saved", saveOk), () =>
+      tabA.press("s", { modifiers: ["Meta"] }),
     );
     const afterSave = await saveStatus(tabA);
     check(
@@ -546,63 +722,44 @@ async function main(): Promise<void> {
       "draft is cleared after a successful save",
       (await tabA.evaluate(`window.localStorage.getItem(${JSON.stringify(draftKey)})`)) === null,
     );
-    await tabA.reload();
-    await waitFor(tabA, "A reloaded", editorReady);
+    await after(expectEvent(tabA, "A reloaded", "ready", ready), () => tabA.reload());
     check("reload shows the saved drawing", (await sceneIds(tabA)).includes(rectA));
     await shot(tabA, "04-saved-reload-1440");
 
     // B saves with the stale token: 409 banner, draft survives a reload, merge keeps both.
-    await tabB.evaluate(drawScript(rectangle(rectB, 420, -260, "#1971c2")));
-    await waitFor(
-      tabB,
-      "B dirty",
-      `() => document.querySelector('[data-testid="save-status"]').dataset.dirty === "true"`,
+    await after(expectEvent(tabB, "B dirty", "dirty"), () =>
+      tabB.evaluate(drawScript(rectangle(rectB, 420, -260, "#1971c2"))),
     );
-    await tabB.click('[data-testid="save-button"]');
-    const bannerText = await waitFor<string>(
-      tabB,
-      "conflict banner",
-      `() => document.querySelector('[data-testid="conflict-banner"]')?.textContent`,
+    await after(expectEvent(tabB, "B stale save conflicts", "conflict", saveConflict), () =>
+      tabB.click('[data-testid="save-button"]'),
+    );
+    const bannerText = await tabB.evaluate<string>(
+      `document.querySelector('[data-testid="conflict-banner"]')?.textContent ?? ""`,
     );
     check(
       "stale save shows the 다른 곳에서 변경됨 banner with the merge action",
       bannerText.includes("다른 곳에서 변경됨") && bannerText.includes("최신본에 내 그림 합치기"),
     );
     await shot(tabB, "05-conflict-banner-1440");
-    await tabB.reload();
-    await waitFor(
-      tabB,
-      "B reloaded with draft banner",
-      `() => document.querySelector('[data-testid="draft-banner"]') !== null &&
-        window.visualAtlasEditor?.getSceneElements().length > 0`,
-    );
-    const survivingDraft = await tabB.evaluate<string | null>(
-      `window.localStorage.getItem(${JSON.stringify(draftKey)})`,
+    await after(expectEvent(tabB, "B reloaded", "ready", ready), () => tabB.reload());
+    const survivingDraft = await tabB.evaluate<{ stored: string | null; banner: boolean }>(
+      `({ stored: window.localStorage.getItem(${JSON.stringify(draftKey)}),
+          banner: document.querySelector('[data-testid="draft-banner"]') !== null })`,
     );
     check(
-      "after reload the stale draft is still in localStorage",
-      survivingDraft?.includes(rectB) === true,
+      "after reload the stale draft is still in localStorage and offered by the draft banner",
+      survivingDraft.stored?.includes(rectB) === true && survivingDraft.banner,
       draftKey,
     );
     await shot(tabB, "06-draft-after-reload-1440");
-    await tabB.click('[data-testid="draft-banner"] button');
-    await waitFor(
-      tabB,
-      "draft restored",
-      `() => window.visualAtlasEditor.getSceneElements().some((e) => e.id === ${JSON.stringify(rectB)})`,
+    await after(expectEvent(tabB, "draft restored", "draft-restored"), () =>
+      tabB.click('[data-testid="draft-banner"] button'),
     );
-    await tabB.click('[data-testid="save-button"]');
-    await waitFor(
-      tabB,
-      "conflict banner again",
-      `() => document.querySelector('[data-testid="conflict-banner"]') !== null`,
+    await after(expectEvent(tabB, "restored draft save conflicts", "conflict", saveConflict), () =>
+      tabB.click('[data-testid="save-button"]'),
     );
-    await tabB.click('[data-testid="conflict-banner"] button');
-    await waitFor(
-      tabB,
-      "merged save",
-      `() => document.querySelector('[data-testid="conflict-banner"]') === null &&
-        document.querySelector('[data-testid="save-status"]').dataset.dirty === "false"`,
+    await after(expectEvent(tabB, "merged save", "saved", saveOk), () =>
+      tabB.click('[data-testid="conflict-banner"] button'),
     );
     const mergedIds = await sceneIds(tabB);
     const serverAfterMerge = await serverFigure();
@@ -633,25 +790,14 @@ async function main(): Promise<void> {
     // saves a competing drawing, and 최신본에 내 그림 합치기 must not bring the deleted one back.
     const rectC = `qa-rect-c-${runId}`;
     const rectD = `qa-rect-d-${runId}`;
-    const beforeD = (await saveStatus(tabB)).token;
-    await tabB.evaluate(drawScript(rectangle(rectD, 760, -260, "#2f9e44")));
-    await waitFor(
-      tabB,
-      "B dirty with rectD",
-      `() => document.querySelector('[data-testid="save-status"]').dataset.dirty === "true"`,
+    await after(expectEvent(tabB, "B dirty with rectD", "dirty"), () =>
+      tabB.evaluate(drawScript(rectangle(rectD, 760, -260, "#2f9e44"))),
     );
-    await tabB.click('[data-testid="save-button"]');
-    await waitFor(
-      tabB,
-      "B saved rectD",
-      `() => { const s = document.querySelector('[data-testid="save-status"]').dataset;
-        return s.dirty === "false" && s.token !== ${JSON.stringify(beforeD)}; }`,
+    await after(expectEvent(tabB, "B saved rectD", "saved", saveOk), () =>
+      tabB.click('[data-testid="save-button"]'),
     );
-    await tabB.evaluate(deleteScript(rectD));
-    await waitFor(
-      tabB,
-      "B dirty after deleting rectD",
-      `() => document.querySelector('[data-testid="save-status"]').dataset.dirty === "true"`,
+    await after(expectEvent(tabB, "B dirty after deleting rectD", "dirty"), () =>
+      tabB.evaluate(deleteScript(rectD)),
     );
     const beforeCompeting = await serverFigure();
     const competing = await call(
@@ -666,18 +812,12 @@ async function main(): Promise<void> {
         },
       },
     );
-    await tabB.click('[data-testid="save-button"]');
-    await waitFor(
-      tabB,
-      "conflict banner after the local deletion",
-      `() => document.querySelector('[data-testid="conflict-banner"]') !== null`,
+    await after(
+      expectEvent(tabB, "conflict after the local deletion", "conflict", saveConflict),
+      () => tabB.click('[data-testid="save-button"]'),
     );
-    await tabB.click('[data-testid="conflict-banner"] button');
-    await waitFor(
-      tabB,
-      "merged save after the local deletion",
-      `() => document.querySelector('[data-testid="conflict-banner"]') === null &&
-        document.querySelector('[data-testid="save-status"]').dataset.dirty === "false"`,
+    await after(expectEvent(tabB, "merged save after the local deletion", "saved", saveOk), () =>
+      tabB.click('[data-testid="conflict-banner"] button'),
     );
     const editorAfterDeletion = await sceneIds(tabB);
     const serverAfterDeletion = (await serverFigure()).scene.elements.map((element) => element.id);
@@ -702,29 +842,45 @@ async function main(): Promise<void> {
       route?.find((step) => step.semanticId === "cas-token")?.semanticId ??
       route?.find((step) => nodeIds.has(step.semanticId))?.semanticId ??
       "";
-    const openNodeNote = async (view: Bun.WebView) => {
+    const noteEditor = (key: string) =>
+      `() => document.querySelector('[data-testid="note-${key}"] textarea') !== null`;
+    // Opens the notes tab from the 학습 tab, so the note editor always mounts after the click.
+    const openNotesFor = async (view: Bun.WebView, key: string) => {
       await view.click('[data-testid="tab-learn"]');
-      await view.click(`button.route-step[data-semantic-id="${noteNode}"]`);
-      await view.click('[data-testid="tab-notes"]');
-      await waitFor(
-        view,
-        "node note editor",
-        `() => document.querySelector('[data-testid="note-${noteNode}"] textarea') !== null`,
+      await view.click(`button.route-step[data-semantic-id="${key}"]`);
+      await after(expectDom(view, `note editor for ${key}`, noteEditor(key)), () =>
+        view.click('[data-testid="tab-notes"]'),
       );
     };
+    const openNodeNote = (view: Bun.WebView) => openNotesFor(view, noteNode);
     const typeInto = async (view: Bun.WebView, key: string, text: string) => {
       await view.click(`[data-testid="note-${key}"] textarea`);
       await view.type(text);
     };
-    const noteSaved = (view: Bun.WebView, key: string, token: string) =>
-      waitFor(
-        view,
-        `note ${key} saved as ${token}`,
-        `() => document.querySelector('[data-testid="note-status-${key}"]').textContent ===
-          "저장됨 · ${token}"`,
+    const noteOutcome = (key: string): EventWait => ({
+      failOn: ["note-saved", "note-conflict", "note-failed"],
+      failMatch: { nodeKey: key },
+    });
+    const saveNote = async (
+      view: Bun.WebView,
+      key: string,
+      token: string,
+      button = `[data-testid="note-save-${key}"]`,
+    ) => {
+      const label = `note ${key} saved as ${token}`;
+      await after(
+        expectEvent(view, label, "note-saved", {
+          ...noteOutcome(key),
+          match: { nodeKey: key, token },
+        }),
+        () => view.click(button),
       );
-    await tabA.reload();
-    await waitFor(tabA, "A ready for notes", editorReady);
+      const status = await view.evaluate<string>(
+        `document.querySelector('[data-testid="note-status-${key}"]').textContent`,
+      );
+      if (status !== `저장됨 · ${token}`) throw new Error(`${label}: status shows "${status}"`);
+    };
+    await after(expectEvent(tabA, "A ready for notes", "ready", ready), () => tabA.reload());
     await openNodeNote(tabA);
     const selectedByRoute = await tabA.evaluate<string[]>(`(() => {
       const editor = window.visualAtlasEditor;
@@ -768,11 +924,8 @@ async function main(): Promise<void> {
       state.markers.includes(noteNode) &&
       state.stored === 2;
     await tabA.click('[data-testid="tab-learn"]');
-    await tabA.click('[data-testid="tab-notes"]');
-    await waitFor(
-      tabA,
-      "notes tab back",
-      `() => document.querySelector('[data-testid="note-${noteNode}"] textarea') !== null`,
+    await after(expectDom(tabA, "notes tab back", noteEditor(noteNode)), () =>
+      tabA.click('[data-testid="tab-notes"]'),
     );
     const afterTabSwitch = await noteState(tabA);
     check(
@@ -783,14 +936,7 @@ async function main(): Promise<void> {
     const otherNode =
       route?.find((step) => nodeIds.has(step.semanticId) && step.semanticId !== noteNode)
         ?.semanticId ?? "";
-    await tabA.click('[data-testid="tab-learn"]');
-    await tabA.click(`button.route-step[data-semantic-id="${otherNode}"]`);
-    await tabA.click('[data-testid="tab-notes"]');
-    await waitFor(
-      tabA,
-      "other node note editor",
-      `() => document.querySelector('[data-testid="note-${otherNode}"] textarea') !== null`,
-    );
+    await openNotesFor(tabA, otherNode);
     await openNodeNote(tabA);
     const afterNodeSwitch = await noteState(tabA);
     check(
@@ -798,8 +944,9 @@ async function main(): Promise<void> {
       otherNode.length > 0 && draftsIntact(afterNodeSwitch),
       `${noteNode} -> ${otherNode} -> ${noteNode}: ${JSON.stringify(afterNodeSwitch)}`,
     );
-    await tabA.reload();
-    await waitFor(tabA, "A ready after note reload", editorReady);
+    await after(expectEvent(tabA, "A ready after note reload", "ready", ready), () =>
+      tabA.reload(),
+    );
     await openNodeNote(tabA);
     const afterNoteReload = await noteState(tabA);
     check(
@@ -808,10 +955,8 @@ async function main(): Promise<void> {
       JSON.stringify(afterNoteReload),
     );
     await shot(tabA, "08a-unsaved-notes-1440");
-    await tabA.click('[data-testid="note-save-_figure"]');
-    await noteSaved(tabA, "_figure", "cas-1");
-    await tabA.click(`[data-testid="note-save-${noteNode}"]`);
-    await noteSaved(tabA, noteNode, "cas-1");
+    await saveNote(tabA, "_figure", "cas-1");
+    await saveNote(tabA, noteNode, "cas-1");
     const afterNoteSave = await noteState(tabA);
     check(
       "figure and node notes save with tokens; saving clears the 저장 안 됨 marker and draft",
@@ -821,18 +966,20 @@ async function main(): Promise<void> {
     await shot(tabA, "08-notes-1440");
 
     // Note conflict: B holds cas-1, A saves cas-2, B overwrites with the fresh token.
-    await tabB.reload();
-    await waitFor(tabB, "B ready for notes", editorReady);
+    await after(expectEvent(tabB, "B ready for notes", "ready", ready), () => tabB.reload());
     await openNodeNote(tabB);
     await typeInto(tabA, noteNode, " + A 수정");
-    await tabA.click(`[data-testid="note-save-${noteNode}"]`);
-    await noteSaved(tabA, noteNode, "cas-2");
+    await saveNote(tabA, noteNode, "cas-2");
     await typeInto(tabB, noteNode, " + B 수정");
-    await tabB.click(`[data-testid="note-save-${noteNode}"]`);
-    const noteConflictText = await waitFor<string>(
-      tabB,
-      "note conflict",
-      `() => document.querySelector('[data-testid="note-conflict-${noteNode}"]')?.textContent`,
+    await after(
+      expectEvent(tabB, "note conflict", "note-conflict", {
+        ...noteOutcome(noteNode),
+        match: { nodeKey: noteNode },
+      }),
+      () => tabB.click(`[data-testid="note-save-${noteNode}"]`),
+    );
+    const noteConflictText = await tabB.evaluate<string>(
+      `document.querySelector('[data-testid="note-conflict-${noteNode}"]')?.textContent ?? ""`,
     );
     check(
       "note 409 shows the server version beside mine with both actions",
@@ -841,8 +988,12 @@ async function main(): Promise<void> {
         noteConflictText.includes("내 버전으로 덮어쓰기"),
     );
     await shot(tabB, "09-note-conflict-1440");
-    await tabB.click(`[data-testid="note-conflict-${noteNode}"] .row button:last-child`);
-    await noteSaved(tabB, noteNode, "cas-3");
+    await saveNote(
+      tabB,
+      noteNode,
+      "cas-3",
+      `[data-testid="note-conflict-${noteNode}"] .row button:last-child`,
+    );
     const noteAfterOverwrite = (await serverFigure()).notes.find(
       (note) => note.nodeKey === noteNode,
     );
@@ -886,14 +1037,15 @@ async function main(): Promise<void> {
       afterPublish.scene.elements.some((element) => element.id === id),
     );
     check("publish keeps both human drawings", humanKept);
-    await tabA.reload();
-    await waitFor(tabA, "A ready after publish", editorReady);
-    await tabA.click('[data-testid="tab-notes"]');
-    const orphanText = await waitFor<string>(
-      tabA,
-      "orphaned note listed",
-      `() => document.querySelector('[data-testid="orphaned-notes"] [data-note-key="${noteNode}"]')
-        ?.textContent`,
+    await after(expectEvent(tabA, "A ready after publish", "ready", ready), () => tabA.reload());
+    const orphanText = await after(
+      expectDom<string>(
+        tabA,
+        "orphaned note listed",
+        `() => document.querySelector('[data-testid="orphaned-notes"] [data-note-key="${noteNode}"]')
+          ?.textContent`,
+      ),
+      () => tabA.click('[data-testid="tab-notes"]'),
     );
     check(
       "사라진 노드의 메모 lists the orphaned note with its body",
@@ -901,11 +1053,13 @@ async function main(): Promise<void> {
     );
     await shot(tabA, "10-orphaned-note-1440");
 
-    await tabA.click('[data-testid="tab-evidence"]');
-    const evidenceText = await waitFor<string>(
-      tabA,
-      "evidence panel",
-      `() => document.querySelector('[data-testid="evidence-panel"]')?.textContent`,
+    const evidenceText = await after(
+      expectDom<string>(
+        tabA,
+        "evidence panel",
+        `() => document.querySelector('[data-testid="evidence-panel"]')?.textContent`,
+      ),
+      () => tabA.click('[data-testid="tab-evidence"]'),
     );
     check(
       "근거 tab shows path:lines evidence and ran/not-run verify entries",
@@ -925,18 +1079,17 @@ async function main(): Promise<void> {
 
     // Mobile width.
     const mobile = await openView("M", baseUrl, 390, 844);
-    await mobile.navigate(`${baseUrl}/`);
-    await waitFor(
-      mobile,
-      "mobile home",
-      `() => document.querySelector('a[href="/p/${qaProject}"]') !== null`,
+    await after(
+      expectEvent(mobile, "mobile home", "loaded", { ...loaded("projects"), navigation: true }),
+      () => mobile.navigate(`${baseUrl}/`),
     );
     await shot(mobile, "12-home-390");
-    await mobile.navigate(`${baseUrl}${figureRoute}`);
-    await waitFor(mobile, "mobile editor", editorReady);
+    await after(expectEvent(mobile, "mobile editor", "ready", ready), () =>
+      mobile.navigate(`${baseUrl}${figureRoute}`),
+    );
     const innerWidth = await mobile.evaluate<number>("window.innerWidth");
     check("390: viewport really is 390 CSS px wide", innerWidth === 390, `${innerWidth}`);
-    const mobileView = await viewportReport(mobile, "390");
+    const mobileView = await viewportReport(mobile);
     checkReadableLabels(390, mobileView);
     check(
       "390: drawing canvas is >= 60vh tall",
@@ -957,11 +1110,15 @@ async function main(): Promise<void> {
       return { visible: bar.checkVisibility() && r.width > 0,
         outside: r.bottom <= host.top || r.top >= host.bottom };
     })()`);
-    await mobile.click('[data-testid="zoom-in"]');
+    await after(expectEvent(mobile, "390: zoomed in", "viewport", viewportPlaced("zoom")), () =>
+      mobile.click('[data-testid="zoom-in"]'),
+    );
     const zoomedIn = await mobile.evaluate<number>(
       "window.visualAtlasEditor.getAppState().zoom.value",
     );
-    await mobile.click('[data-testid="zoom-reset"]');
+    await after(expectEvent(mobile, "390: zoom reset", "viewport", viewportPlaced("reset")), () =>
+      mobile.click('[data-testid="zoom-reset"]'),
+    );
     const zoomedBack = await mobile.evaluate<number>(
       "window.visualAtlasEditor.getAppState().zoom.value",
     );
@@ -986,6 +1143,7 @@ async function main(): Promise<void> {
     await shot(mobile, "13-figure-390");
     await checkFitAll(mobile, 390);
     await shot(mobile, "13b-fit-all-390");
+    await checkReset(mobile, 390, mobileView);
     await mobile.scrollTo('[data-testid="learning-panel"]', { block: "start" });
     await checkInlineCode(mobile, "390", answer);
     await shot(mobile, "14-learning-390");

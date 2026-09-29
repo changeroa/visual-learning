@@ -28,6 +28,7 @@ import {
   type SceneElement,
   sceneConflictOf,
 } from "./api";
+import { useAnnounce } from "./app-events";
 import { type NoteDraft, NotesPanel, readNoteDrafts, writeNoteDraft } from "./notes-panel";
 import { EvidencePanel, LearningPanel } from "./panels";
 import { clearDraft, type Draft, readDraft, writeDraft } from "./scene-draft";
@@ -147,13 +148,18 @@ export function FigureView({ project, artifact }: { project: string; artifact: s
     figure: null,
     error: null,
   });
+  const announce = useAnnounce();
   // biome-ignore lint/correctness/useExhaustiveDependencies: generation forces a fresh load
   useEffect(() => {
     let alive = true;
     setState({ figure: null, error: null });
     api.figure(project, artifact).then(
       (figure) => alive && setState({ figure, error: null }),
-      (error: unknown) => alive && setState({ figure: null, error: errorText(error) }),
+      (error: unknown) => {
+        if (!alive) return;
+        setState({ figure: null, error: errorText(error) });
+        announce("load-failed", { key: `figure:${project}/${artifact}`, error: errorText(error) });
+      },
     );
     return () => {
       alive = false;
@@ -213,6 +219,7 @@ function Workspace({
   const [pendingDraft, setPendingDraft] = useState<Draft | null>(() =>
     readDraft(project, artifact),
   );
+  const announce = useAnnounce();
   const pendingRef = useRef(pendingDraft !== null);
   const [selected, setSelected] = useState<string | null>(null);
   const [viewportReady, setViewportReady] = useState(false);
@@ -283,6 +290,7 @@ function Workspace({
         queueMicrotask(() => {
           excalidraw.updateScene({ appState: viewport, captureUpdate: CaptureUpdateAction.NEVER });
           setViewportReady(true);
+          announce("ready", { project, artifact, token: tokenRef.current });
         });
       }
       setZoomPercent(Math.round(appState.zoom.value * 100));
@@ -304,7 +312,10 @@ function Workspace({
         elements: toPlain(elements.filter((element) => !element.isDeleted)),
         savedAt: new Date().toISOString(),
       });
-      if (!dirtyRef.current) setDirty(true);
+      if (!dirtyRef.current) {
+        setDirty(true);
+        announce("dirty");
+      }
     },
     [claimIds, project, artifact],
   );
@@ -340,12 +351,16 @@ function Workspace({
       setDirty(false);
       setConflict(null);
       setMessage(`저장됨 (${result.token})`);
+      announce("saved", { token: result.token });
     } catch (error) {
       const current = sceneConflictOf(error);
-      if (current === null) setMessage(`저장 실패: ${errorText(error)}`);
-      else {
+      if (current === null) {
+        setMessage(`저장 실패: ${errorText(error)}`);
+        announce("save-failed", { error: errorText(error) });
+      } else {
         setConflict(current);
         setMessage("다른 곳에서 변경됨 — 내 그림은 이 브라우저에 초안으로 남아 있습니다");
+        announce("conflict", { token: current.token });
       }
     } finally {
       savingRef.current = false;
@@ -417,6 +432,7 @@ function Workspace({
     setPendingDraft(null);
     setDirty(true);
     setMessage(`초안을 불러왔습니다 (기준 ${pendingDraft.baseToken}). 저장하면 서버와 비교합니다.`);
+    announce("draft-restored", { baseToken: pendingDraft.baseToken });
   };
 
   const discardDraft = () => {
@@ -450,9 +466,10 @@ function Workspace({
       appState: zoomedViewport(excalidraw.getAppState(), factor),
       captureUpdate: CaptureUpdateAction.NEVER,
     });
+    announce("viewport", { mode: "zoom" });
   };
 
-  const placeViewport = (place: typeof initialViewport) => {
+  const placeViewport = (place: typeof initialViewport, mode: "reset" | "fit") => {
     const excalidraw = apiRef.current;
     if (excalidraw === null) return;
     const { width, height } = excalidraw.getAppState();
@@ -460,6 +477,7 @@ function Workspace({
       appState: place(excalidraw.getSceneElements(), width, height, isCompact()),
       captureUpdate: CaptureUpdateAction.NEVER,
     });
+    announce("viewport", { mode });
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -566,7 +584,7 @@ function Workspace({
             <button
               type="button"
               className="secondary"
-              onClick={() => placeViewport(initialViewport)}
+              onClick={() => placeViewport(initialViewport, "reset")}
               data-testid="zoom-reset"
             >
               처음 보기
@@ -574,7 +592,7 @@ function Workspace({
             <button
               type="button"
               className="secondary"
-              onClick={() => placeViewport(fitAllViewport)}
+              onClick={() => placeViewport(fitAllViewport, "fit")}
               data-testid="zoom-fit"
             >
               전체 보기

@@ -2,6 +2,7 @@ import "./styles.css";
 import { type ReactNode, StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, errorText, type FigureSummary, type ProjectSummary } from "./api";
+import { useAnnounce } from "./app-events";
 import { FigureView } from "./figure-view";
 import { figurePath, projectPath, useRoute } from "./router";
 import { Link, shortTime } from "./ui";
@@ -12,12 +13,21 @@ function useLoad<T>(load: () => Promise<T>, key: string): { data: T | null; erro
     data: null,
     error: null,
   });
+  const announce = useAnnounce();
   // biome-ignore lint/correctness/useExhaustiveDependencies: the caller's key identifies the load
   useEffect(() => {
     let alive = true;
     load().then(
-      (data) => alive && setState({ key, data, error: null }),
-      (error: unknown) => alive && setState({ key, data: null, error: errorText(error) }),
+      (data) => {
+        if (!alive) return;
+        setState({ key, data, error: null });
+        announce("loaded", { key });
+      },
+      (error: unknown) => {
+        if (!alive) return;
+        setState({ key, data: null, error: errorText(error) });
+        announce("load-failed", { key, error: errorText(error) });
+      },
     );
     return () => {
       alive = false;

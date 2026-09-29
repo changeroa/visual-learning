@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { api, errorText, type Note, type NoteConflict, noteConflictOf, type Spec } from "./api";
+import { useAnnounce } from "./app-events";
 import { firstLine, shortTime } from "./ui";
 
 export const figureNoteKey = "_figure";
@@ -74,6 +75,7 @@ function NoteEditor({
     draft !== undefined ? "수정됨" : note === undefined ? "새 메모" : "저장됨",
   );
   const [busy, setBusy] = useState(false);
+  const announce = useAnnounce();
   const bodyRef = useRef(body);
   bodyRef.current = body;
 
@@ -104,12 +106,16 @@ function NoteEditor({
         orphaned: false,
         updatedAt: new Date().toISOString(),
       });
+      announce("note-saved", { nodeKey, token: result.token });
     } catch (error) {
       const found = noteConflictOf(error);
-      if (found === null) setStatus(`저장 실패: ${errorText(error)}`);
-      else {
+      if (found === null) {
+        setStatus(`저장 실패: ${errorText(error)}`);
+        announce("note-failed", { nodeKey, error: errorText(error) });
+      } else {
         setConflict(found);
         setStatus("다른 곳에서 변경됨");
+        announce("note-conflict", { nodeKey, token: found.current?.token ?? null });
       }
     } finally {
       setBusy(false);
