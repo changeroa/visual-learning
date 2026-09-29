@@ -179,6 +179,34 @@ function checkReadableLabels(width: number, report: ViewportReport): void {
   );
 }
 
+// 전체 보기 (fit-all) must bring every node label's bounding box inside the canvas viewport.
+async function checkFitAll(view: Bun.WebView, width: number): Promise<void> {
+  await view.click('[data-testid="zoom-fit"]');
+  const report = await view.evaluate<{ labels: number; outside: string[]; zoom: number }>(`(() => {
+    const editor = window.visualAtlasEditor;
+    const state = editor.getAppState();
+    const zoom = state.zoom.value;
+    const canvas = document.querySelector('[data-testid="excalidraw-host"] canvas')
+      .getBoundingClientRect();
+    const labels = editor.getSceneElements().filter((e) => e.type === "text" &&
+      e.customData?.elementRole === "node-label");
+    const outside = labels.filter((e) => {
+      const left = canvas.left + (e.x + state.scrollX) * zoom;
+      const top = canvas.top + (e.y + state.scrollY) * zoom;
+      return left < canvas.left || top < canvas.top || left + e.width * zoom > canvas.right ||
+        top + e.height * zoom > canvas.bottom;
+    }).map((e) => e.customData?.semanticId ?? e.id);
+    return { labels: labels.length, outside, zoom };
+  })()`);
+  check(
+    `${width}: 전체 보기 puts every node label's bounding box inside the canvas viewport`,
+    report.labels > 0 && report.outside.length === 0,
+    `${report.labels - report.outside.length}/${report.labels} inside at zoom ${report.zoom.toFixed(
+      3,
+    )}${report.outside.length > 0 ? `, outside: ${report.outside.join(", ")}` : ""}`,
+  );
+}
+
 const inlineCodePattern = /`([^`\n]+)`/g;
 
 function withoutBackticks(text: string): string {
@@ -305,6 +333,20 @@ function drawScript(element: SceneElement): string {
     const editor = window.visualAtlasEditor;
     editor.updateScene({
       elements: [...editor.getSceneElementsIncludingDeleted(), ${JSON.stringify(element)}],
+      captureUpdate: "IMMEDIATELY",
+    });
+    return true;
+  })()`;
+}
+
+// Deletes an element the way Excalidraw does: isDeleted with a bumped version and versionNonce.
+function deleteScript(id: string): string {
+  return `(() => {
+    const editor = window.visualAtlasEditor;
+    editor.updateScene({
+      elements: editor.getSceneElementsIncludingDeleted().map((e) => e.id === ${JSON.stringify(id)}
+        ? { ...e, isDeleted: true, version: e.version + 1, versionNonce: e.versionNonce + 1 }
+        : e),
       captureUpdate: "IMMEDIATELY",
     });
     return true;
@@ -454,6 +496,9 @@ async function main(): Promise<void> {
     check("figure opens in view mode", viewState.viewMode === true);
     check("EXCALIDRAW_ASSET_PATH is /", viewState.assetPath === "/");
     await shot(tabA, "03-figure-1440");
+    await checkFitAll(tabA, 1440);
+    await shot(tabA, "03b-fit-all-1440");
+    await tabA.click('[data-testid="zoom-reset"]');
 
     // Tab B loads the same token before A saves (the stale writer).
     const tabB = await openView("B", baseUrl, 1440, 900);
@@ -583,6 +628,70 @@ async function main(): Promise<void> {
     );
     await shot(tabB, "07-merged-1440");
 
+    // Verifier repro (three-way merge): B saves a drawing, deletes it locally, another writer
+    // saves a competing drawing, and 최신본에 내 그림 합치기 must not bring the deleted one back.
+    const rectC = `qa-rect-c-${runId}`;
+    const rectD = `qa-rect-d-${runId}`;
+    const beforeD = (await saveStatus(tabB)).token;
+    await tabB.evaluate(drawScript(rectangle(rectD, 760, -260, "#2f9e44")));
+    await waitFor(
+      tabB,
+      "B dirty with rectD",
+      `() => document.querySelector('[data-testid="save-status"]').dataset.dirty === "true"`,
+    );
+    await tabB.click('[data-testid="save-button"]');
+    await waitFor(
+      tabB,
+      "B saved rectD",
+      `() => { const s = document.querySelector('[data-testid="save-status"]').dataset;
+        return s.dirty === "false" && s.token !== ${JSON.stringify(beforeD)}; }`,
+    );
+    await tabB.evaluate(deleteScript(rectD));
+    await waitFor(
+      tabB,
+      "B dirty after deleting rectD",
+      `() => document.querySelector('[data-testid="save-status"]').dataset.dirty === "true"`,
+    );
+    const beforeCompeting = await serverFigure();
+    const competing = await call(
+      "PUT",
+      `/api/projects/${qaProject}/figures/${artifact}/scene`,
+      false,
+      {
+        expectedToken: beforeCompeting.token,
+        scene: {
+          ...beforeCompeting.scene,
+          elements: [...beforeCompeting.scene.elements, rectangle(rectC, 760, 0, "#f08c00")],
+        },
+      },
+    );
+    await tabB.click('[data-testid="save-button"]');
+    await waitFor(
+      tabB,
+      "conflict banner after the local deletion",
+      `() => document.querySelector('[data-testid="conflict-banner"]') !== null`,
+    );
+    await tabB.click('[data-testid="conflict-banner"] button');
+    await waitFor(
+      tabB,
+      "merged save after the local deletion",
+      `() => document.querySelector('[data-testid="conflict-banner"]') === null &&
+        document.querySelector('[data-testid="save-status"]').dataset.dirty === "false"`,
+    );
+    const editorAfterDeletion = await sceneIds(tabB);
+    const serverAfterDeletion = (await serverFigure()).scene.elements.map((element) => element.id);
+    check(
+      "merge after a local deletion keeps it deleted and keeps the competing drawing (3-way)",
+      competing.status === 200 &&
+        !serverAfterDeletion.includes(rectD) &&
+        !editorAfterDeletion.includes(rectD) &&
+        [rectA, rectB, rectC].every(
+          (id) => serverAfterDeletion.includes(id) && editorAfterDeletion.includes(id),
+        ),
+      `competing save ${competing.status}; server has rectD: ${serverAfterDeletion.includes(rectD)}`,
+    );
+    await shot(tabB, "07b-merged-after-deletion-1440");
+
     // Notes: figure note + node note chosen through the route (customData.semanticId).
     const route = (parsedSpec.learning as { route?: { semanticId: string }[] } | undefined)?.route;
     const nodeIds = new Set(
@@ -627,14 +736,87 @@ async function main(): Promise<void> {
       selectedByRoute.includes(noteNode),
       noteNode,
     );
-    await typeInto(tabA, "_figure", "그림 전체 메모: CAS 흐름 복습");
+    const figureNote = "그림 전체 메모: CAS 흐름 복습";
+    const noteV1 = `노드 메모 v1 ${runId}`;
+    await typeInto(tabA, "_figure", figureNote);
+    await typeInto(tabA, noteNode, noteV1);
+
+    // Unsaved notes survive a tab switch, a node switch, and a reload, marked 저장 안 됨.
+    const noteDraftKeys = ["_figure", noteNode].map(
+      (key) => `visual-atlas:note-draft:${qaProject}:${artifact}:${key}`,
+    );
+    type NoteState = { figure: string; node: string; markers: string[]; stored: number };
+    const noteState = (view: Bun.WebView) =>
+      view.evaluate<NoteState>(`(() => {
+        const value = (key) =>
+          document.querySelector('[data-testid="note-' + key + '"] textarea')?.value ?? "";
+        return {
+          figure: value("_figure"),
+          node: value(${JSON.stringify(noteNode)}),
+          markers: [...document.querySelectorAll('[data-testid^="note-unsaved-"]')]
+            .filter((node) => node.textContent === "저장 안 됨")
+            .map((node) => node.dataset.testid.slice("note-unsaved-".length)),
+          stored: ${JSON.stringify(noteDraftKeys)}
+            .filter((key) => window.localStorage.getItem(key) !== null).length,
+        };
+      })()`);
+    const draftsIntact = (state: NoteState) =>
+      state.figure === figureNote &&
+      state.node === noteV1 &&
+      state.markers.includes("_figure") &&
+      state.markers.includes(noteNode) &&
+      state.stored === 2;
+    await tabA.click('[data-testid="tab-learn"]');
+    await tabA.click('[data-testid="tab-notes"]');
+    await waitFor(
+      tabA,
+      "notes tab back",
+      `() => document.querySelector('[data-testid="note-${noteNode}"] textarea') !== null`,
+    );
+    const afterTabSwitch = await noteState(tabA);
+    check(
+      "unsaved notes survive a tab switch, marked 저장 안 됨",
+      draftsIntact(afterTabSwitch),
+      JSON.stringify(afterTabSwitch),
+    );
+    const otherNode =
+      route?.find((step) => nodeIds.has(step.semanticId) && step.semanticId !== noteNode)
+        ?.semanticId ?? "";
+    await tabA.click('[data-testid="tab-learn"]');
+    await tabA.click(`button.route-step[data-semantic-id="${otherNode}"]`);
+    await tabA.click('[data-testid="tab-notes"]');
+    await waitFor(
+      tabA,
+      "other node note editor",
+      `() => document.querySelector('[data-testid="note-${otherNode}"] textarea') !== null`,
+    );
+    await openNodeNote(tabA);
+    const afterNodeSwitch = await noteState(tabA);
+    check(
+      "unsaved node note survives switching the selected node away and back",
+      otherNode.length > 0 && draftsIntact(afterNodeSwitch),
+      `${noteNode} -> ${otherNode} -> ${noteNode}: ${JSON.stringify(afterNodeSwitch)}`,
+    );
+    await tabA.reload();
+    await waitFor(tabA, "A ready after note reload", editorReady);
+    await openNodeNote(tabA);
+    const afterNoteReload = await noteState(tabA);
+    check(
+      "unsaved notes are restored from localStorage after a reload",
+      draftsIntact(afterNoteReload),
+      JSON.stringify(afterNoteReload),
+    );
+    await shot(tabA, "08a-unsaved-notes-1440");
     await tabA.click('[data-testid="note-save-_figure"]');
     await noteSaved(tabA, "_figure", "cas-1");
-    const noteV1 = `노드 메모 v1 ${runId}`;
-    await typeInto(tabA, noteNode, noteV1);
     await tabA.click(`[data-testid="note-save-${noteNode}"]`);
     await noteSaved(tabA, noteNode, "cas-1");
-    check("figure note and node note save with tokens", true, noteNode);
+    const afterNoteSave = await noteState(tabA);
+    check(
+      "figure and node notes save with tokens; saving clears the 저장 안 됨 marker and draft",
+      afterNoteSave.markers.length === 0 && afterNoteSave.stored === 0,
+      `${noteNode}: ${JSON.stringify(afterNoteSave)}`,
+    );
     await shot(tabA, "08-notes-1440");
 
     // Note conflict: B holds cas-1, A saves cas-2, B overwrites with the fresh token.
@@ -801,6 +983,8 @@ async function main(): Promise<void> {
       `${mobileLayout.canvas}/${mobileLayout.pane}`,
     );
     await shot(mobile, "13-figure-390");
+    await checkFitAll(mobile, 390);
+    await shot(mobile, "13b-fit-all-390");
     await mobile.scrollTo('[data-testid="learning-panel"]', { block: "start" });
     await checkInlineCode(mobile, "390", answer);
     await shot(mobile, "14-learning-390");
