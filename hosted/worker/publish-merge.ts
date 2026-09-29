@@ -30,9 +30,14 @@ function parseSpec(input: unknown) {
 }
 
 export function validateScene(scene: ExcalidrawScene, artifactId: string): void {
-  const graph = buildReferenceGraph(scene, artifactId);
-  if (graph.dangling.length > 0)
-    throw new InputError(`dangling scene references: ${graph.dangling.join(", ")}`);
+  try {
+    const graph = buildReferenceGraph(scene, artifactId);
+    if (graph.dangling.length > 0)
+      throw new InputError(`dangling scene references: ${graph.dangling.join(", ")}`);
+  } catch (error) {
+    if (error instanceof InputError) throw error;
+    throw new InputError("invalid scene references", { cause: error });
+  }
 }
 
 function currentResult(

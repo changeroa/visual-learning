@@ -79,6 +79,13 @@ beforeEach(async () => {
 afterEach(() => db.close());
 
 describe("hosted publish merge", () => {
+  test("malformed scene graph exceptions become InputError without storing a figure", async () => {
+    const malformed: ExcalidrawScene = JSON.parse('{"elements":[{"id":"broken","groupIds":"q"}]}');
+    await expect(publish(spec, malformed)).rejects.toBeInstanceOf(InputError);
+    expect(await readFigure(db, project, spec.artifactId)).toBeNull();
+    expect((await db.prepare("SELECT * FROM token_highwater").all()).results).toEqual([]);
+  });
+
   test("first publish stores the provided scene verbatim, including human elements", async () => {
     const scene = {
       ...fixtureScene,

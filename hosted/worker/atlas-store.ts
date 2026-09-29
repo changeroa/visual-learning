@@ -155,16 +155,14 @@ function insertRevision(
   db: D1Like,
   project: string,
   artifact: string,
-  token: string,
   source: "publish" | "human-save",
 ): D1Statement {
   return db
     .prepare(`INSERT INTO revisions
       (project_id, artifact_id, token, source, spec_json, scene_json, created_at)
       SELECT project_id, artifact_id, token, ?, spec_json, scene_json, updated_at FROM figures
-      WHERE project_id=? AND artifact_id=? AND changes()=1
-      AND EXISTS (SELECT 1 FROM figures WHERE project_id=? AND artifact_id=? AND token=?)`)
-    .bind(source, project, artifact, project, artifact, token);
+      WHERE project_id=? AND artifact_id=? AND changes()=1`)
+    .bind(source, project, artifact);
 }
 
 export async function createFigure(
@@ -178,13 +176,17 @@ export async function createFigure(
 ): Promise<{ outcome: "created"; token: string } | { outcome: "exists" }> {
   const { project, spec, scene, deprecatedAnchors } = input;
   const session = db.withSession?.("first-primary") ?? db;
-  const results = await session.batch([
+  const results = await session.batch<{ token: string }>([
     session
       .prepare(`INSERT INTO figures
       (project_id, artifact_id, title, kind, revision, spec_json, scene_json, token, counter,
         deprecated_anchors_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'cas-1', 1, ?, ?)
-      ON CONFLICT(project_id, artifact_id) DO NOTHING`)
+      SELECT ?, ?, ?, ?, ?, ?, ?, 'cas-' || next, next, ?, ?
+      FROM (SELECT COALESCE((SELECT counter FROM token_highwater
+        WHERE project_id=? AND artifact_id=? AND kind='figure' AND node_key=''), 0)+1 AS next)
+      WHERE true
+      ON CONFLICT(project_id, artifact_id) DO NOTHING
+      RETURNING token`)
       .bind(
         project,
         spec.artifactId,
@@ -195,11 +197,15 @@ export async function createFigure(
         JSON.stringify(scene),
         JSON.stringify(deprecatedAnchors),
         new Date().toISOString(),
+        project,
+        spec.artifactId,
       ),
-    insertRevision(session, project, spec.artifactId, "cas-1", "publish"),
+    insertRevision(session, project, spec.artifactId, "publish"),
   ]);
   if (results[0]?.meta.changes === 0) return { outcome: "exists" };
-  return { outcome: "created", token: "cas-1" };
+  const created = results[0]?.results[0];
+  if (created === undefined) throw new Error("figure insert returned no token");
+  return { outcome: "created", token: created.token };
 }
 
 export async function commitScene(
@@ -239,7 +245,7 @@ export async function commitScene(
         expectedToken,
         current.counter,
       ),
-    insertRevision(session, project, artifact, token, source),
+    insertRevision(session, project, artifact, source),
   ]);
   if (results[0]?.meta.changes === 0)
     return sceneConflict(await figureRow(session, project, artifact));
@@ -287,17 +293,24 @@ export async function commitNote(
       ? session
           .prepare(`INSERT INTO notes
         (project_id, artifact_id, node_key, body, token, counter, orphaned, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, 0, ?)
-        ON CONFLICT(project_id, artifact_id, node_key) DO NOTHING`)
-          .bind(project, artifact, nodeKey, body, token, now)
+        SELECT ?, ?, ?, ?, 'cas-' || next, next, 0, ?
+        FROM (SELECT COALESCE((SELECT counter FROM token_highwater
+          WHERE project_id=? AND artifact_id=? AND kind='note' AND node_key=?), 0)+1 AS next)
+        WHERE true
+        ON CONFLICT(project_id, artifact_id, node_key) DO NOTHING
+        RETURNING token`)
+          .bind(project, artifact, nodeKey, body, now, project, artifact, nodeKey)
       : session
           .prepare(`UPDATE notes SET body=?, token=?, counter=counter+1, updated_at=?
-        WHERE project_id=? AND artifact_id=? AND node_key=? AND token=? AND counter=?`)
+        WHERE project_id=? AND artifact_id=? AND node_key=? AND token=? AND counter=?
+        RETURNING token`)
           .bind(body, token, now, project, artifact, nodeKey, expectedToken, current?.counter ?? 0);
-  const result = await statement.run();
+  const result = await statement.all<{ token: string }>();
   if (result.meta.changes === 0)
     return noteConflict(await noteRow(session, project, artifact, nodeKey));
-  return { outcome: "committed", token };
+  const committed = result.results[0];
+  if (committed === undefined) throw new Error("note write returned no token");
+  return { outcome: "committed", token: committed.token };
 }
 
 export async function markOrphanedNotes(
