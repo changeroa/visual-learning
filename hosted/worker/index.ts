@@ -65,11 +65,18 @@ type Route = {
 
 const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const sceneShape = z.looseObject({
-  elements: z.array(z.looseObject({ id: z.string().min(1) })),
+  elements: z.array(
+    z.looseObject({
+      id: z.string().min(1),
+      groupIds: z.array(z.string()).optional(),
+      boundElements: z.array(z.unknown()).nullable().optional(),
+    }),
+  ),
 });
 // z.unknown() keeps the caller's scene object by reference, so stored bytes keep their key order.
 const sceneInput = z.unknown().refine((value) => sceneShape.safeParse(value).success, {
-  message: "scene must be an object with an elements array of elements with string ids",
+  message:
+    "scene elements require string ids, string-array groupIds, and array-or-null boundElements",
 });
 const sceneBody = z.object({ expectedToken: z.string().min(1), scene: sceneInput });
 const noteBody = z.object({ expectedToken: z.string().min(1).nullable(), body: z.string() });

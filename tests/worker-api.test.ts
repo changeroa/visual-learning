@@ -107,6 +107,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   db = new SQLiteD1();
+  db.database.exec(
+    readFileSync(new URL("../hosted/migrations/0002_token_highwater.sql", import.meta.url), "utf8"),
+  );
   env = {
     ASSETS: {
       fetch: async (request) =>
@@ -250,6 +253,99 @@ describe("read routes", () => {
 });
 
 describe("POST /api/publish", () => {
+  test("scene graph exceptions are 400 before any project write", async () => {
+    const response = await call("POST", "/api/publish", {
+      token: serviceToken,
+      body: {
+        projectId: project,
+        repoName: "visual-learning",
+        commit: null,
+        figures: [
+          {
+            spec,
+            scene: {
+              elements: [
+                { id: "human" },
+                {
+                  id: "agent",
+                  containerId: "human",
+                  customData: {
+                    owner: "agent",
+                    artifactId: spec.artifactId,
+                    semanticId: "node",
+                    elementRole: "shape",
+                  },
+                },
+              ],
+            },
+            verify: [],
+          },
+        ],
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(await errorCode(response)).toBe("invalid_input");
+    expect((await db.prepare("SELECT * FROM projects").all()).results).toEqual([]);
+    expect((await db.prepare("SELECT * FROM token_highwater").all()).results).toEqual([]);
+  });
+
+  test("valid optional scene fields retain their original bytes", async () => {
+    const submitted = {
+      elements: [{ groupIds: ["group"], boundElements: null, id: "human", customField: 42 }],
+    };
+    const response = await call("POST", "/api/publish", {
+      token: serviceToken,
+      body: {
+        projectId: project,
+        repoName: "visual-learning",
+        commit: null,
+        figures: [{ spec, scene: submitted, verify: [] }],
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(await db.prepare("SELECT scene_json FROM figures").first<string>("scene_json")).toBe(
+      JSON.stringify(submitted),
+    );
+    const saved = await call("PUT", `${figurePath}/scene`, {
+      token: userToken,
+      body: { expectedToken: "cas-1", scene: submitted },
+    });
+    expect(saved.status).toBe(200);
+    expect(await db.prepare("SELECT scene_json FROM figures").first<string>("scene_json")).toBe(
+      JSON.stringify(submitted),
+    );
+  });
+
+  test.each([
+    { id: 12 },
+    { id: "broken", groupIds: "q" },
+    { id: "broken", groupIds: [12] },
+    { id: "broken", boundElements: "q" },
+  ])("malformed element %j is 400 for publish and PUT without writes", async (element) => {
+    const malformed = { elements: [element] };
+    const response = await call("POST", "/api/publish", {
+      token: serviceToken,
+      body: {
+        projectId: project,
+        repoName: "visual-learning",
+        commit: null,
+        figures: [{ spec, scene: malformed, verify: [] }],
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(await errorCode(response)).toBe("invalid_input");
+    expect(await db.prepare("SELECT COUNT(*) AS n FROM projects").first<number>("n")).toBe(0);
+    await publishFixture();
+    const before = (await db.prepare("SELECT * FROM figures").all()).results;
+    const saved = await call("PUT", `${figurePath}/scene`, {
+      token: userToken,
+      body: { expectedToken: "cas-1", scene: malformed },
+    });
+    expect(saved.status).toBe(400);
+    expect(await errorCode(saved)).toBe("invalid_input");
+    expect((await db.prepare("SELECT * FROM figures").all()).results).toEqual(before);
+  });
+
   test("creates then refreshes and records verify runs", async () => {
     const created = await publishFixture();
     expect(await created.json()).toEqual({
@@ -502,6 +598,44 @@ describe("PUT notes", () => {
 });
 
 describe("DELETE project", () => {
+  test("delete and republish reject both pre-delete scene and note tokens with 409", async () => {
+    await publishFixture();
+    const notePath = `${figurePath}/notes/_figure`;
+    await call("PUT", notePath, {
+      token: userToken,
+      body: { expectedToken: null, body: "old note" },
+    });
+    expect((await call("DELETE", `/api/projects/${project}`, { token: serviceToken })).status).toBe(
+      200,
+    );
+    expect((await publishFixture()).status).toBe(200);
+    const recreated = await call("PUT", notePath, {
+      token: userToken,
+      body: { expectedToken: null, body: "new note" },
+    });
+    const staleScene = await call("PUT", `${figurePath}/scene`, {
+      token: userToken,
+      body: { expectedToken: "cas-1", scene: { elements: [] } },
+    });
+    expect(staleScene.status).toBe(409);
+    expect(await staleScene.json()).toMatchObject({ current: { token: "cas-2", scene } });
+    expect(await recreated.json()).toEqual({ token: "cas-2" });
+    const staleNote = await call("PUT", notePath, {
+      token: userToken,
+      body: { expectedToken: "cas-1", body: "lost update" },
+    });
+    expect(staleNote.status).toBe(409);
+    expect(await staleNote.json()).toMatchObject({
+      current: { token: "cas-2", body: "new note" },
+    });
+    const stored = await call("GET", figurePath, { token: userToken });
+    expect(await stored.json()).toMatchObject({
+      token: "cas-2",
+      scene,
+      notes: [{ token: "cas-2", body: "new note" }],
+    });
+  });
+
   test("the service deletes a project once, then gets 404", async () => {
     await publishFixture();
     const deleted = await call("DELETE", `/api/projects/${project}`, { token: serviceToken });

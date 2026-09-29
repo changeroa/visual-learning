@@ -39,10 +39,15 @@ const project = "visual-learning";
 const artifact = spec.artifactId;
 const scene: ExcalidrawScene = { elements: [] };
 const input = { project, artifact, scene, source: "human-save", deprecatedAnchors: [] } as const;
+const highwaterMigration = readFileSync(
+  new URL("../hosted/migrations/0002_token_highwater.sql", import.meta.url),
+  "utf8",
+);
 let db: SQLiteD1;
 
 beforeEach(async () => {
   db = new SQLiteD1();
+  db.database.exec(highwaterMigration);
   await db
     .prepare("INSERT INTO projects VALUES (?, ?, ?, ?)")
     .bind(project, "visual-learning", "abc1234", "2026-09-29")
@@ -86,6 +91,7 @@ describe("D1 adapter", () => {
   test("the migration applies cleanly to an empty database", async () => {
     const migrated = new SQLiteD1();
     try {
+      migrated.database.exec(highwaterMigration);
       expect(
         (
           await migrated
@@ -93,7 +99,9 @@ describe("D1 adapter", () => {
             .all()
         ).results,
       ).toEqual(
-        ["figures", "notes", "projects", "revisions", "verify_runs"].map((name) => ({ name })),
+        ["figures", "notes", "projects", "revisions", "token_highwater", "verify_runs"].map(
+          (name) => ({ name }),
+        ),
       );
       expect(
         await migrated.prepare("PRAGMA integrity_check").first<string>("integrity_check"),
@@ -305,6 +313,11 @@ describe("atlas figures", () => {
     );
     expect(await counter()).toBe(1);
     expect((await readFigure(db, project, artifact))?.token).toBe("cas-1");
+    expect(
+      await db
+        .prepare("SELECT counter FROM token_highwater WHERE kind='figure'")
+        .first<number>("counter"),
+    ).toBe(1);
     expect(await db.prepare("SELECT COUNT(*) AS count FROM revisions").first<number>("count")).toBe(
       1,
     );
@@ -315,6 +328,115 @@ describe("atlas figures", () => {
 });
 
 describe("notes and project lifecycle", () => {
+  test("delete/recreate races preserve high-water marks without allocating losing tokens", async () => {
+    const note = { project, artifact, nodeKey: "_figure", body: "new", expectedToken: null };
+    await commitNote(db, note);
+    for (let previous = 1; previous <= 5; previous += 2) {
+      expect(await commitScene(db, { ...input, expectedToken: `cas-${previous}` })).toMatchObject({
+        token: `cas-${previous + 1}`,
+      });
+      expect(await commitNote(db, { ...note, expectedToken: `cas-${previous}` })).toMatchObject({
+        token: `cas-${previous + 1}`,
+      });
+      await deleteProject(db, project);
+      const creates = await Promise.all(
+        [scene, realScene].map((candidate) =>
+          createFigure(db, { project, spec, scene: candidate, deprecatedAnchors: [] }),
+        ),
+      );
+      expect(creates.map((result) => result.outcome).sort()).toEqual(["created", "exists"]);
+      expect(creates.find((result) => result.outcome === "created")).toEqual({
+        outcome: "created",
+        token: `cas-${previous + 2}`,
+      });
+      const notes = await Promise.all([commitNote(db, note), commitNote(db, note)]);
+      expect(notes.map((result) => result.outcome).sort()).toEqual(["committed", "conflict"]);
+      expect(notes.find((result) => result.outcome === "committed")).toEqual({
+        outcome: "committed",
+        token: `cas-${previous + 2}`,
+      });
+      for (const stale of [previous, previous + 1]) {
+        expect(await commitScene(db, { ...input, expectedToken: `cas-${stale}` })).toMatchObject({
+          outcome: "conflict",
+          current: { token: `cas-${previous + 2}` },
+        });
+        expect(await commitNote(db, { ...note, expectedToken: `cas-${stale}` })).toMatchObject({
+          outcome: "conflict",
+          current: { token: `cas-${previous + 2}` },
+        });
+      }
+      expect((await db.prepare("SELECT counter FROM token_highwater").all()).results).toEqual([
+        { counter: previous + 2 },
+        { counter: previous + 2 },
+      ]);
+      expect((await db.prepare("SELECT token FROM revisions").all()).results).toEqual([
+        { token: `cas-${previous + 2}` },
+      ]);
+    }
+  });
+
+  test("migration backfills existing counters and tracks writes by the previous Worker", async () => {
+    // Reconstruct the pre-0002 schema with live rows; migration must not rewrite their bytes.
+    db.database.exec(`
+      DROP TRIGGER figure_token_insert;
+      DROP TRIGGER figure_token_update;
+      DROP TRIGGER note_token_insert;
+      DROP TRIGGER note_token_update;
+      DROP TABLE token_highwater;
+      UPDATE figures SET counter=7, token='cas-7';
+    `);
+    await db
+      .prepare("INSERT INTO notes VALUES (?, ?, '_figure', 'old', 'cas-9', 9, 0, 'now')")
+      .bind(project, artifact)
+      .run();
+    const figures = (await db.prepare("SELECT * FROM figures").all()).results;
+    const notes = (await db.prepare("SELECT * FROM notes").all()).results;
+    db.database.exec(highwaterMigration);
+    expect((await db.prepare("SELECT * FROM figures").all()).results).toEqual(figures);
+    expect((await db.prepare("SELECT * FROM notes").all()).results).toEqual(notes);
+    expect(
+      (await db.prepare("SELECT counter FROM token_highwater ORDER BY kind").all()).results,
+    ).toEqual([{ counter: 7 }, { counter: 9 }]);
+    // Old SQL does not know about token_highwater; the triggers still retain its writes.
+    db.database.exec(`
+      UPDATE figures SET counter=8, token='cas-8';
+      UPDATE notes SET counter=10, token='cas-10';
+    `);
+    await deleteProject(db, project);
+    expect(await createFigure(db, { project, spec, scene, deprecatedAnchors: [] })).toEqual({
+      outcome: "created",
+      token: "cas-9",
+    });
+    expect(
+      await commitNote(db, {
+        project,
+        artifact,
+        nodeKey: "_figure",
+        body: "new",
+        expectedToken: null,
+      }),
+    ).toEqual({ outcome: "committed", token: "cas-11" });
+  });
+
+  test("a high-water write failure rolls back the note instead of reporting success", async () => {
+    const note = { project, artifact, nodeKey: "_figure", body: "first", expectedToken: null };
+    await commitNote(db, note);
+    db.database.exec(
+      "CREATE TRIGGER reject_highwater BEFORE UPDATE ON token_highwater BEGIN SELECT RAISE(ABORT, 'highwater blocked'); END",
+    );
+    await expect(commitNote(db, { ...note, body: "lost", expectedToken: "cas-1" })).rejects.toThrow(
+      "highwater blocked",
+    );
+    expect((await db.prepare("SELECT token, body FROM notes").all()).results).toEqual([
+      { token: "cas-1", body: "first" },
+    ]);
+    expect(
+      await db
+        .prepare("SELECT counter FROM token_highwater WHERE kind='note'")
+        .first<number>("counter"),
+    ).toBe(1);
+  });
+
   test("projects require an ID even when the commit is unknown", async () => {
     await expect(
       db
