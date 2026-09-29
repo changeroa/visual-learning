@@ -5148,14 +5148,13 @@ function jsonBytes(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
 }
+function formatResult(value, json) {
+  return json ? `${JSON.stringify(value)}
+` : `OK ${JSON.stringify(value)}
+`;
+}
 function writeResult(value, json) {
-  if (!json) {
-    process.stdout.write(`OK ${JSON.stringify(value)}
-`);
-    return;
-  }
-  process.stdout.write(`${JSON.stringify(value)}
-`);
+  process.stdout.write(formatResult(value, json));
 }
 
 // src/operations.ts
@@ -5223,6 +5222,7 @@ var semanticId = string2().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).brand("SemanticId
 var artifactId = string2().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).brand("ArtifactId");
 var evidencePath = string2().min(1).refine((value) => !isAbsolute(value) && normalize(value) === value && !value.split("/").some((part) => part === "" || part === "." || part === ".."), "evidence path must be normalized and repository-relative");
 var sourceRoot = string2().refine((value) => isAbsolute(value) && normalize(value) === value, "source root must be a normalized absolute path");
+var hostedSourceRoot = string2().min(1).refine((value) => !isAbsolute(value) && !/^(?:[~\\/]|[A-Za-z]:)/.test(value), "hosted source root must not be an absolute or home-relative path");
 var visualCategorySchema = _enum([
   "cloudflare",
   "aws",
@@ -5316,68 +5316,78 @@ var learningSchema = object({
     breaks: array(learningText).min(1)
   }).strict()).default([])
 }).strict();
-var visualNoteSpecSchema = object({
-  schemaVersion: literal(1),
-  artifactId,
-  kind: _enum(visualKindValues),
-  revision: number2().int().positive(),
-  title: string2().trim().min(1),
-  source: object({
-    root: sourceRoot,
-    commit: string2().regex(/^[0-9a-f]{7,64}$/).nullable()
-  }).strict(),
-  presentation: presentationSchema.optional(),
-  learning: learningSchema.optional(),
-  nodes: array(visualNodeSchema).min(1),
-  edges: array(visualEdgeSchema)
-}).strict().superRefine((spec, context) => {
-  const allIds = [
-    ...spec.nodes.map((node) => node.semanticId),
-    ...spec.edges.map((edge) => edge.semanticId)
-  ];
-  if (new Set(allIds).size !== allIds.length)
-    context.addIssue({ code: "custom", message: "semantic IDs must be unique" });
-  const nodeIds = new Set(spec.nodes.map((node) => node.semanticId));
-  for (const edge of spec.edges) {
-    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to))
+function specSchemaWithRoot(root) {
+  return object({
+    schemaVersion: literal(1),
+    artifactId,
+    kind: _enum(visualKindValues),
+    revision: number2().int().positive(),
+    title: string2().trim().min(1),
+    source: object({
+      root,
+      commit: string2().regex(/^[0-9a-f]{7,64}$/).nullable()
+    }).strict(),
+    presentation: presentationSchema.optional(),
+    learning: learningSchema.optional(),
+    nodes: array(visualNodeSchema).min(1),
+    edges: array(visualEdgeSchema)
+  }).strict().superRefine((spec, context) => {
+    const allIds = [
+      ...spec.nodes.map((node) => node.semanticId),
+      ...spec.edges.map((edge) => edge.semanticId)
+    ];
+    if (new Set(allIds).size !== allIds.length)
+      context.addIssue({ code: "custom", message: "semantic IDs must be unique" });
+    const nodeIds = new Set(spec.nodes.map((node) => node.semanticId));
+    for (const edge of spec.edges) {
+      if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to))
+        context.addIssue({
+          code: "custom",
+          message: `edge ${edge.semanticId} has a dangling endpoint`
+        });
+    }
+    for (const claim of [...spec.nodes, ...spec.edges]) {
+      if (claim.status === "fact" && claim.evidence.length === 0)
+        context.addIssue({
+          code: "custom",
+          message: `fact ${claim.semanticId} requires evidence`
+        });
+    }
+    const frames = spec.presentation?.frames ?? [];
+    if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
+      context.addIssue({ code: "custom", message: "presentation frame IDs must be unique" });
+    const frameIds = new Set(frames.map((frame) => frame.id));
+    for (const node of spec.nodes) {
+      if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId))
+        context.addIssue({
+          code: "custom",
+          message: `node ${node.semanticId} references an unknown presentation frame`
+        });
+    }
+    const learning = spec.learning;
+    if (learning === undefined)
+      return;
+    const claimIds = new Set(allIds);
+    const routeIds = learning.route.map((step) => step.semanticId);
+    if (new Set(routeIds).size !== routeIds.length)
       context.addIssue({
         code: "custom",
-        message: `edge ${edge.semanticId} has a dangling endpoint`
+        message: "learning route must not repeat a semantic ID"
       });
-  }
-  for (const claim of [...spec.nodes, ...spec.edges]) {
-    if (claim.status === "fact" && claim.evidence.length === 0)
-      context.addIssue({ code: "custom", message: `fact ${claim.semanticId} requires evidence` });
-  }
-  const frames = spec.presentation?.frames ?? [];
-  if (new Set(frames.map((frame) => frame.id)).size !== frames.length)
-    context.addIssue({ code: "custom", message: "presentation frame IDs must be unique" });
-  const frameIds = new Set(frames.map((frame) => frame.id));
-  for (const node of spec.nodes) {
-    if (node.visual?.frameId !== undefined && !frameIds.has(node.visual.frameId))
-      context.addIssue({
-        code: "custom",
-        message: `node ${node.semanticId} references an unknown presentation frame`
-      });
-  }
-  const learning = spec.learning;
-  if (learning === undefined)
-    return;
-  const claimIds = new Set(allIds);
-  const routeIds = learning.route.map((step) => step.semanticId);
-  if (new Set(routeIds).size !== routeIds.length)
-    context.addIssue({ code: "custom", message: "learning route must not repeat a semantic ID" });
-  for (const id of [...routeIds, ...learning.verify.map((step) => step.semanticId)]) {
-    if (!claimIds.has(id))
-      context.addIssue({
-        code: "custom",
-        message: `learning references unknown semantic ID ${id}`
-      });
-  }
-  const terms = learning.glossary.map((entry) => entry.term);
-  if (new Set(terms).size !== terms.length)
-    context.addIssue({ code: "custom", message: "learning glossary terms must be unique" });
-});
+    for (const id of [...routeIds, ...learning.verify.map((step) => step.semanticId)]) {
+      if (!claimIds.has(id))
+        context.addIssue({
+          code: "custom",
+          message: `learning references unknown semantic ID ${id}`
+        });
+    }
+    const terms = learning.glossary.map((entry) => entry.term);
+    if (new Set(terms).size !== terms.length)
+      context.addIssue({ code: "custom", message: "learning glossary terms must be unique" });
+  });
+}
+var visualNoteSpecSchema = specSchemaWithRoot(sourceRoot);
+var hostedVisualNoteSpecSchema = specSchemaWithRoot(hostedSourceRoot);
 function parseVisualNoteSpec(input) {
   return visualNoteSpecSchema.parse(input);
 }
@@ -9201,7 +9211,7 @@ function reviewLearningSpec(path) {
 
 // src/remote-client.ts
 import { lstatSync as lstatSync7, readFileSync as readFileSync13, realpathSync as realpathSync3 } from "fs";
-import { join as join13, resolve as resolve4 } from "path";
+import { join as join13, resolve as resolve4, sep as sep3 } from "path";
 
 // src/remote-payload.ts
 import { existsSync as existsSync9, readdirSync as readdirSync4, readFileSync as readFileSync12, realpathSync, statSync } from "fs";
@@ -9814,21 +9824,22 @@ async function recordVerify(spec, repoRoot, options = {}) {
 // src/remote-client.ts
 var defaultRemote = "https://atlas.iyendev.com";
 var slug2 = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+var elementId = /^[A-Za-z0-9_-]{1,128}$/;
 var leakPattern2 = /\/Users\/|\/home\/|\/private\/var\//;
 var localHosts = new Set(["127.0.0.1", "localhost"]);
 var requestTimeoutMs = 60000;
+var invalidPublishResponse = "remote returned an invalid publish response";
+var invalidExportResponse = "remote returned an invalid export response";
 var credentialsSchema = object({
   clientId: string2().min(1),
   clientSecret: string2().min(1)
 });
-var publishResponseSchema = object({
-  results: array(object({
-    artifactId: string2(),
-    outcome: _enum(["created", "refreshed", "conflict"]),
-    token: string2(),
-    deprecatedAnchors: array(string2()),
-    orphanedNotes: array(string2())
-  }))
+var publishResultSchema = object({
+  artifactId: string2().regex(slug2),
+  outcome: _enum(["created", "refreshed", "conflict"]),
+  token: string2().regex(/^cas-\d+$/),
+  deprecatedAnchors: array(string2().regex(elementId)),
+  orphanedNotes: array(string2().regex(elementId))
 });
 var exportResponseSchema = object({
   figures: array(object({
@@ -9838,7 +9849,18 @@ var exportResponseSchema = object({
     notes: array(unknown()),
     verify: array(unknown())
   }))
-});
+}).refine(({ figures }) => new Set(figures.map((figure) => figure.artifactId)).size === figures.length);
+function publishResponseSchema(sent) {
+  return object({ results: array(publishResultSchema) }).refine(({ results }) => {
+    const answered = new Set(results.map((result) => result.artifactId));
+    return results.length === sent.length && answered.size === results.length && sent.every((artifactId) => answered.has(artifactId));
+  });
+}
+function credentialRedactor(credentials) {
+  const idPart = /^(.+)\.access$/.exec(credentials.clientId)?.[1];
+  const secrets = [credentials.clientSecret, ...idPart === undefined ? [] : [idPart]].sort((left, right) => right.length - left.length);
+  return (text) => secrets.reduce((current, secret) => current.split(secret).join("***"), text);
+}
 function parseRemote(remote) {
   let url;
   try {
@@ -9901,9 +9923,6 @@ function accessHeaders(remote, credentials, env) {
     headers["Cf-Access-Jwt-Assertion"] = devJwt;
   return headers;
 }
-function redact(message, credentials) {
-  return message.split(credentials.clientSecret).join("[redacted]").slice(0, 500);
-}
 function remoteErrorDetail(text) {
   try {
     const body = JSON.parse(text);
@@ -9945,7 +9964,7 @@ async function request(remote, path, credentials, env, body) {
   }
   const text = await response.text();
   if (!response.ok) {
-    throw new RuntimeError(redact(`remote ${method} ${path} failed with ${response.status}: ${remoteErrorDetail(text)}`, credentials));
+    throw new RuntimeError(credentialRedactor(credentials)(`remote ${method} ${path} failed with ${response.status}: ${remoteErrorDetail(text)}`).slice(0, 500));
   }
   try {
     return JSON.parse(text);
@@ -10029,7 +10048,7 @@ async function attachVerify(payload, input) {
 }
 async function publish(input) {
   const remote = parseRemote(input.remote);
-  const credentials = loadCredentials(input.env);
+  const credentials = input.credentials ?? loadCredentials(input.env);
   const payload = await attachVerify(buildPublishPayload({
     root: input.root,
     project: input.project,
@@ -10039,9 +10058,10 @@ async function publish(input) {
     env: input.env,
     ...input.repoRoot === undefined ? {} : { repoRoot: input.repoRoot }
   });
-  const response = publishResponseSchema.safeParse(await request(remote, "/api/publish", credentials, input.env, JSON.stringify(payload)));
+  const sent = payload.figures.map((figure) => String(figure.spec.artifactId));
+  const response = publishResponseSchema(sent).safeParse(await request(remote, "/api/publish", credentials, input.env, JSON.stringify(payload)));
   if (!response.success)
-    throw new RuntimeError("remote returned an unexpected publish response");
+    throw new RuntimeError(invalidPublishResponse);
   return { projectId: payload.projectId, results: response.data.results };
 }
 function existingBytes(out, relativePath) {
@@ -10061,22 +10081,22 @@ async function pull(input) {
     throw new InputError(`invalid project slug: ${input.project}`);
   const out = ensureRealDirectory(input.out, "--out");
   const remote = parseRemote(input.remote);
-  const credentials = loadCredentials(input.env);
+  const credentials = input.credentials ?? loadCredentials(input.env);
   const response = exportResponseSchema.safeParse(await request(remote, `/api/projects/${input.project}/export`, credentials, input.env));
   if (!response.success)
-    throw new RuntimeError("remote returned an unexpected export response");
+    throw new RuntimeError(invalidExportResponse);
   const project = input.project;
-  const seen = new Set;
+  const projectRoot = resolve4(out, project);
   const files = [];
   for (const figure of response.data.figures) {
     const id = figure.artifactId;
-    if (seen.has(id))
-      throw new RuntimeError(`remote export repeats artifact ${id}`);
-    seen.add(id);
     files.push({
       path: `${project}/${id}.excalidraw.md`,
       bytes: encodeSceneToMarkdown(figure.scene)
     }, { path: `${project}/specs/${id}.json`, bytes: jsonBytes(figure.spec) }, { path: `${project}/notes/${id}.json`, bytes: jsonBytes(figure.notes) }, { path: `${project}/verify/${id}.json`, bytes: jsonBytes(figure.verify) });
+  }
+  if (files.some((file) => !resolve4(out, file.path).startsWith(`${projectRoot}${sep3}`))) {
+    throw new RuntimeError(invalidExportResponse);
   }
   for (const folder of ["specs", "notes", "verify"])
     safeMakeDirectories(out, `${project}/${folder}`);
@@ -10095,7 +10115,7 @@ async function pull(input) {
     if (written.includes(file.path))
       safeCreateFile(out, file.path, file.bytes);
   }
-  return { project, figures: seen.size, written, unchanged };
+  return { project, figures: response.data.figures.length, written, unchanged };
 }
 
 // src/session-export.ts
@@ -10678,28 +10698,39 @@ function takeRepeated(argv, flag) {
   }
   return [values, rest];
 }
+var redact = null;
+function scrub(text) {
+  return redact === null ? text : redact(text);
+}
+function remoteCredentials() {
+  const credentials = loadCredentials(process.env);
+  redact = credentialRedactor(credentials);
+  return credentials;
+}
 async function runPublish(argv) {
   const [artifacts, rest] = takeRepeated(argv, "--artifact");
   const options = parseOptions(rest, new Set(["--root", "--project", "--repo-root", "--remote"]));
   const repoRoot = optional2(options, "--repo-root");
+  const credentials = remoteCredentials();
   const result = await publish({
     root: required2(options, "--root"),
     project: required2(options, "--project"),
     remote: optional2(options, "--remote") ?? defaultRemote,
     env: process.env,
+    credentials,
     ...artifacts.length === 0 ? {} : { artifacts },
     ...repoRoot === undefined ? {} : { repoRoot }
   });
   if (options.json) {
-    writeResult(result, true);
+    process.stdout.write(scrub(formatResult(result, true)));
   } else {
     for (const figure of result.results) {
       const extras = [
         ...figure.deprecatedAnchors.length === 0 ? [] : [`deprecatedAnchors=${figure.deprecatedAnchors.join(",")}`],
         ...figure.orphanedNotes.length === 0 ? [] : [`orphanedNotes=${figure.orphanedNotes.join(",")}`]
       ];
-      process.stdout.write(`${[figure.outcome, figure.artifactId, figure.token, ...extras].join(" ")}
-`);
+      process.stdout.write(scrub(`${[figure.outcome, figure.artifactId, figure.token, ...extras].join(" ")}
+`));
     }
   }
   const conflicts = result.results.filter((figure) => figure.outcome === "conflict");
@@ -10714,12 +10745,15 @@ async function run3(command, argv) {
       return;
     case "pull": {
       const options = parseOptions(argv, new Set(["--project", "--out", "--remote"]));
-      writeResult(await pull({
+      const credentials = remoteCredentials();
+      const result = await pull({
         project: required2(options, "--project"),
         out: required2(options, "--out"),
         remote: optional2(options, "--remote") ?? defaultRemote,
-        env: process.env
-      }), options.json);
+        env: process.env,
+        credentials
+      });
+      process.stdout.write(scrub(formatResult(result, options.json)));
       return;
     }
     case "init": {
@@ -10828,19 +10862,25 @@ try {
   await main();
 } catch (error) {
   if (error instanceof CollisionError || error instanceof ConflictError) {
-    process.stderr.write(`visual-note: ${error.message}
-`);
+    process.stderr.write(scrub(`visual-note: ${error.message}
+`));
     process.exit(3);
   }
   if (error instanceof RuntimeError) {
-    process.stderr.write(`visual-note: ${error.message}
-`);
+    process.stderr.write(scrub(`visual-note: ${error.message}
+`));
     process.exit(4);
   }
   if (error instanceof InputError || error instanceof ZodError || error instanceof SyntaxError || error instanceof TypeError) {
-    process.stderr.write(`visual-note: ${error.message}
-`);
+    process.stderr.write(scrub(`visual-note: ${error.message}
+`));
     process.exit(2);
+  }
+  if (redact !== null) {
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    process.stderr.write(scrub(`visual-note: unexpected error: ${detail}
+`));
+    process.exit(1);
   }
   throw error;
 }
