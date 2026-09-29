@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -85,6 +86,45 @@ function atlasCopy(): string {
   return root;
 }
 
+// The two-figure fixture plus clones of vl-01 as vl-03-copy..vl-06-copy: six figures in order.
+const sixFigures = [
+  "vl-01-architecture",
+  "vl-02-export-series",
+  "vl-03-copy",
+  "vl-04-copy",
+  "vl-05-copy",
+  "vl-06-copy",
+];
+
+function sixFigureAtlas(): string {
+  const root = atlasCopy();
+  const base = join(root, projectBase);
+  const manifestPath = join(base, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    artifacts: { artifactId: string }[];
+  };
+  const specText = readFileSync(join(base, "specs/vl-01-architecture.json"), "utf8");
+  for (const artifactId of sixFigures.slice(2)) {
+    const spec = JSON.parse(specText) as { artifactId: string };
+    writeFileSync(join(base, `specs/${artifactId}.json`), JSON.stringify({ ...spec, artifactId }));
+    copyFileSync(
+      join(base, "vl-01-architecture.excalidraw.md"),
+      join(base, `${artifactId}.excalidraw.md`),
+    );
+    manifest.artifacts.push({ artifactId });
+  }
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  return root;
+}
+
+function sentArtifacts(requests: readonly Recorded[]): string[][] {
+  return requests.map((request) =>
+    (JSON.parse(request.body) as { figures: Figure[] }).figures.map(
+      (figure) => figure.spec.artifactId,
+    ),
+  );
+}
+
 function homeWithCredentials(content: string, mode = 0o600): string {
   const home = temporary("visual-learning-home-");
   const folder = join(home, ".config/visual-atlas");
@@ -152,16 +192,27 @@ describe("remote client publish", () => {
       "created vl-01-architecture cas-1\ncreated vl-02-export-series cas-1\n",
     );
     expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
-    const [request] = remote.requests;
-    expect(remote.requests).toHaveLength(1);
-    expect(request?.method).toBe("POST");
-    expect(request?.path).toBe("/api/publish");
-    expect(request?.headers.get("cf-access-client-id")).toBe(clientId);
-    expect(request?.headers.get("cf-access-client-secret")).toBe(secret);
-    expect(request?.headers.get("cf-access-jwt-assertion")).toBeNull();
-    const body = JSON.parse(request?.body ?? "{}") as { projectId: string; figures: Figure[] };
-    expect(body.projectId).toBe("visual-learning");
-    const verify = body.figures.flatMap((figure) => figure.verify);
+    expect(sentArtifacts(remote.requests)).toEqual([
+      ["vl-01-architecture"],
+      ["vl-02-export-series"],
+    ]);
+    const bodies = remote.requests.map((request) => {
+      expect(request.method).toBe("POST");
+      expect(request.path).toBe("/api/publish");
+      expect(request.headers.get("cf-access-client-id")).toBe(clientId);
+      expect(request.headers.get("cf-access-client-secret")).toBe(secret);
+      expect(request.headers.get("cf-access-jwt-assertion")).toBeNull();
+      return JSON.parse(request.body) as {
+        projectId: string;
+        repoName: string;
+        commit: string | null;
+        figures: Figure[];
+      };
+    });
+    const [first, second] = bodies;
+    expect(first?.projectId).toBe("visual-learning");
+    expect({ ...second, figures: [] }).toEqual({ ...first, figures: [] });
+    const verify = bodies.flatMap((body) => body.figures).flatMap((figure) => figure.verify);
     expect(verify.length).toBeGreaterThan(0);
     for (const entry of verify) {
       expect(entry).toEqual(
@@ -189,17 +240,56 @@ describe("remote client publish", () => {
     ).not.toHaveProperty("Cf-Access-Jwt-Assertion");
   });
 
-  test("a conflict outcome exits 3 after printing every outcome", async () => {
+  test("six figures go out as six single-figure requests in order and all outcomes print", async () => {
     // Given
-    const remote = stub((request) => publishResults(request, "vl-02-export-series"));
+    const remote = stub((request) => publishResults(request));
     // When
-    const result = await runCli(publishArgs(atlasCopy(), remote.url), childEnv(validHome()));
+    const result = await runCli(publishArgs(sixFigureAtlas(), remote.url), childEnv(validHome()));
+    // Then
+    expect(result.code).toBe(0);
+    expect(sentArtifacts(remote.requests)).toEqual(sixFigures.map((artifactId) => [artifactId]));
+    expect(result.stdout).toBe(
+      sixFigures.map((artifactId) => `created ${artifactId} cas-1\n`).join(""),
+    );
+    expect(result.stderr).toBe("");
+  });
+
+  test("a conflict mid-sequence still sends the later figures, prints every outcome, and exits 3", async () => {
+    // Given
+    const remote = stub((request) => publishResults(request, "vl-03-copy"));
+    // When
+    const result = await runCli(publishArgs(sixFigureAtlas(), remote.url), childEnv(validHome()));
     // Then
     expect(result.code).toBe(3);
-    expect(result.stdout).toContain("created vl-01-architecture cas-1");
-    expect(result.stdout).toContain("conflict vl-02-export-series cas-1");
-    expect(result.stderr).toContain("publish conflict for vl-02-export-series");
+    expect(sentArtifacts(remote.requests)).toEqual(sixFigures.map((artifactId) => [artifactId]));
+    expect(result.stdout).toBe(
+      sixFigures
+        .map((artifactId) => {
+          const outcome = artifactId === "vl-03-copy" ? "conflict" : "created";
+          return `${outcome} ${artifactId} cas-1\n`;
+        })
+        .join(""),
+    );
+    expect(result.stderr).toBe("visual-note: publish conflict for vl-03-copy\n");
     expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+  });
+
+  test("a failed request mid-sequence stops before the later figures and exits 4", async () => {
+    // Given
+    const remote = stub((request) =>
+      sentArtifacts([request])[0]?.[0] === "vl-03-copy"
+        ? Response.json({ error: { code: "internal", message: "boom" } }, { status: 500 })
+        : publishResults(request),
+    );
+    // When
+    const result = await runCli(publishArgs(sixFigureAtlas(), remote.url), childEnv(validHome()));
+    // Then
+    expect(result.code).toBe(4);
+    expect(sentArtifacts(remote.requests)).toEqual(sixFigures.slice(0, 3).map((id) => [id]));
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      "visual-note: remote POST /api/publish failed with 500: internal: boom\n",
+    );
   });
 
   test("rejects credentials that are missing, not 0600, or malformed before any request", async () => {
