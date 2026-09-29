@@ -6,7 +6,7 @@
   "packageManager": "bun@1.3.14",
   "scripts": {
     "build": "bun build src/cli.ts --target=bun --outfile=dist/visual-note.js",
-    "build:web": "bun build hosted/web/main.tsx --target=browser --minify --outdir=hosted/dist/assets && cp hosted/web/index.html hosted/dist/index.html && rm -rf hosted/dist/fonts && cp -R node_modules/@excalidraw/excalidraw/dist/prod/fonts hosted/dist/fonts",
+    "build:web": "bun build hosted/web/main.tsx --target=browser --minify --outdir=hosted/dist/assets && cp hosted/web/index.html hosted/dist/index.html && cp hosted/web/_headers hosted/dist/_headers && rm -rf hosted/dist/fonts && cp -R node_modules/@excalidraw/excalidraw/dist/prod/fonts hosted/dist/fonts",
     "dev:hosted": "wrangler dev --local --config hosted/wrangler.jsonc --env local",
     "lint": "biome check .",
     "test": "bun test",

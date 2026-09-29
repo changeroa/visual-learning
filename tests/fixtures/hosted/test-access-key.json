@@ -1,0 +1,25 @@
+{
+  "_comment": "TEST-ONLY key for tests/worker-api.test.ts and `bun run dev:hosted` (env.local LOCAL_JWKS_JSON). Never trust it outside ENVIRONMENT=local; production verifies Cloudflare Access JWKS.",
+  "kid": "visual-atlas-local-test",
+  "publicJwk": {
+    "kty": "RSA",
+    "n": "07oK-ydFlq5-VR3DOPMyZzwI79bJmxMGk5OqDOMVUhOnehbhaMN0T3a7Z-BPkVdwNH2QnRCFwfkRs13UYgE7AMnbjl67YlS03dfIVTQLnLj39h_JUjLALFdrcZ29ui7QRJMr9ep7TChA4R34WmMG8myL1-u7H5ZRbdzDtTr8xr9E6DSx2PKgfbx3hL-E3OloYVYXbSGTHowuXG2vLCxjLl5hJIvNO8vDBHGo5LH_rxn8L-HBI0l1mdXB9c-MjDfF6pHF6aebcuucBrPRqxBSlHSqBUGT8mf8Las1pdc0hwG2kf6w_9V5nWV1kpR4cMgZzSROKU7YrNOdS48AAstk_w",
+    "e": "AQAB",
+    "alg": "RS256",
+    "kid": "visual-atlas-local-test",
+    "use": "sig"
+  },
+  "privateJwk": {
+    "kty": "RSA",
+    "n": "07oK-ydFlq5-VR3DOPMyZzwI79bJmxMGk5OqDOMVUhOnehbhaMN0T3a7Z-BPkVdwNH2QnRCFwfkRs13UYgE7AMnbjl67YlS03dfIVTQLnLj39h_JUjLALFdrcZ29ui7QRJMr9ep7TChA4R34WmMG8myL1-u7H5ZRbdzDtTr8xr9E6DSx2PKgfbx3hL-E3OloYVYXbSGTHowuXG2vLCxjLl5hJIvNO8vDBHGo5LH_rxn8L-HBI0l1mdXB9c-MjDfF6pHF6aebcuucBrPRqxBSlHSqBUGT8mf8Las1pdc0hwG2kf6w_9V5nWV1kpR4cMgZzSROKU7YrNOdS48AAstk_w",
+    "e": "AQAB",
+    "d": "OS3eN1O0zGvVfGEsTt4G97BT7YnBKpspxIM1goN1R5Q9P5CcUXGvoKI9HGGMu4C0schTXMeQiAEe0aT-bXVNnPnmzH0y9-xOaDcVSEVk-W9Or-6HrSY9lfwJ7UYfbf-kiVCBp8kqgTfBxcoVPzvNLX05CxgDkhVDansbc385suaIqlMB5RzA50hhFb6yN5wDJXumMLA6mJiTztxeR4DTpAAJ2_Km3tLPv3a9XaVPHf14uoOyYj--JO4_KC_2vS1SQP7SAXwduKetGz5q0GWvwrtw_d-RGQ8IJhK4PngzrS65WdrKb7cnHxL-Ag7Z_1qJ5RepZZd6cXIN-MNTMIpikQ",
+    "p": "_FGqK2s2rBfXMjmPjxeTFSdOa7O0hUUgTq5RbazAbjORAOXcUb5vrPhI1TBECR0TICav1Wp3yleoqyoODequUqa8XHatkPnkg4yu-1D8wK-78KpYTPamvJrWYFFSYdy8tkifu2nZkIlkZEv4KF102WiY3xyTJqDXMM0g1ajUL8c",
+    "q": "1tDHPgFUtbIWnenVK2KD4_nmLTselQ_raYung51u5B34FyhyX8xs0BSoRccMrlyASia5etDmYDk3mmmztiCwnN-jyRw4JZE8H9q_R1VltY5Lspw8yxqXJ6JLn1GIZLfNWK7Khkq0UMhMJj9_DRbcdE9J8qA9ZP9o1zK4kcWKkQk",
+    "dp": "RryKTXPYNvTUErOKaJ4-UM7dMFqIAFi5zvUVxP6KUBrKywql8pDF9CMDIClQ2ZE6HGhcISOhA6wBkELQ_9vMFUXDRtTKofs8shiNsc0pnsdlk_ndmW4InpV2BjimNONSUHQZu8vX_6pU571Yi9BvgsfNG7eCFXFAAuFvFBcprV8",
+    "dq": "qV2saVe1SRgjOtf86RrgL-N8tlaxUwddLTcdmOiMYLC8RM3v91X-yMQws-svNV3bDBuiC5IewOj7zPPf7A20EctFoC9umTf79oWKYByVd2K8jhMe32eUm3wbMX6gEgDUl0IgjWbi6foyB8nySwimQdGt1Oy_2xyAtYLZAJ2GFbk",
+    "qi": "QW6X2h2jiJuP3ifBunXGrQgDXIhpgFqXSI4urxfN-qaNYA3oUDusMIBkw57fZoDS7ARS5uQ17xOz4CoxVHEwuAhATrTPerkXWzey_5a3McSDXb9hP7XI-LwSaQPkHXdbeuiTCOzXCM8F6tTp9P2sUJoczrj07IRgvGoqThdwHOE",
+    "alg": "RS256",
+    "kid": "visual-atlas-local-test"
+  }
+}
