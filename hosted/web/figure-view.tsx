@@ -28,9 +28,10 @@ import {
   type SceneElement,
   sceneConflictOf,
 } from "./api";
-import { NotesPanel } from "./notes-panel";
+import { type NoteDraft, NotesPanel, readNoteDrafts, writeNoteDraft } from "./notes-panel";
 import { EvidencePanel, LearningPanel } from "./panels";
-import { clearDraft, type Draft, mergeOntoLatest, readDraft, writeDraft } from "./scene-merge";
+import { clearDraft, type Draft, readDraft, writeDraft } from "./scene-draft";
+import { baseStamps, mergeThreeWay } from "./scene-merge";
 import { shortTime } from "./ui";
 
 type EditorWindow = Window & { visualAtlasEditor?: ExcalidrawImperativeAPI };
@@ -97,6 +98,29 @@ function initialViewport(
       ? (top + usableHeight / 2) / zoom - (minY + maxY) / 2
       : top / zoom - minY;
   return { zoom: { value: zoom as ZoomValue }, scrollX, scrollY };
+}
+
+// "전체 보기": the whole figure inside the pane and centered, even below the readable zoom (the
+// reader chose an overview); never above 100%.
+function fitAllViewport(
+  elements: readonly ExcalidrawElement[],
+  width: number,
+  height: number,
+  compact: boolean,
+): Viewport {
+  const [minX, minY, maxX, maxY] = getCommonBounds(elements);
+  const top = compact ? viewportPad : menuReserve;
+  const usableHeight = height - top - viewportPad;
+  const fit = Math.min(
+    (width - 2 * viewportPad) / Math.max(maxX - minX, 1),
+    usableHeight / Math.max(maxY - minY, 1),
+  );
+  const zoom = Math.min(1, Math.max(minZoom, fit));
+  return {
+    zoom: { value: zoom as ZoomValue },
+    scrollX: width / 2 / zoom - (minX + maxX) / 2,
+    scrollY: (top + usableHeight / 2) / zoom - (minY + maxY) / 2,
+  };
 }
 
 // Zooms around the canvas center, like Excalidraw's own +/- buttons.
@@ -171,6 +195,8 @@ function Workspace({
 }) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const tokenRef = useRef(figure.token);
+  // The server scene at tokenRef: the three-way merge base after a 409.
+  const baseRef = useRef<readonly SceneElement[]>(figure.scene.elements);
   const editingRef = useRef(false);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
@@ -193,6 +219,9 @@ function Workspace({
   const [zoomPercent, setZoomPercent] = useState(100);
   const [tab, setTab] = useState<Tab>("learn");
   const [notes, setNotes] = useState<Note[]>(figure.notes);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, NoteDraft>>(() =>
+    readNoteDrafts(project, artifact),
+  );
   const claimIds = useMemo(
     () => new Set([...figure.spec.nodes, ...figure.spec.edges].map((claim) => claim.semanticId)),
     [figure.spec],
@@ -271,6 +300,7 @@ function Workspace({
       if (!editingRef.current || pendingRef.current || hash === baselineRef.current) return;
       writeDraft(project, artifact, {
         baseToken: tokenRef.current,
+        base: baseStamps(baseRef.current),
         elements: toPlain(elements.filter((element) => !element.isDeleted)),
         savedAt: new Date().toISOString(),
       });
@@ -290,6 +320,7 @@ function Workspace({
     const elements = toPlain(excalidraw.getSceneElements());
     writeDraft(project, artifact, {
       baseToken: tokenRef.current,
+      base: baseStamps(baseRef.current),
       elements,
       savedAt: new Date().toISOString(),
     });
@@ -303,6 +334,7 @@ function Workspace({
         files: excalidraw.getFiles() as unknown as Record<string, unknown>,
       });
       setCurrentToken(result.token);
+      baseRef.current = elements;
       clearDraft(project, artifact);
       baselineRef.current = hashElementsVersion(everything);
       setDirty(false);
@@ -352,8 +384,13 @@ function Workspace({
   const merge = async () => {
     const excalidraw = apiRef.current;
     if (excalidraw === null || conflict === null) return;
-    const merged = mergeOntoLatest(conflict.scene.elements, toPlain(excalidraw.getSceneElements()));
+    const merged = mergeThreeWay(
+      baseRef.current,
+      conflict.scene.elements,
+      toPlain(excalidraw.getSceneElementsIncludingDeleted()),
+    );
     setCurrentToken(conflict.token);
+    baseRef.current = conflict.scene.elements;
     excalidraw.updateScene({
       elements: toExcalidraw(merged),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
@@ -371,6 +408,7 @@ function Workspace({
     if (excalidraw === null || pendingDraft === null) return;
     pendingRef.current = false;
     setCurrentToken(pendingDraft.baseToken);
+    baseRef.current = pendingDraft.base;
     enterEditing();
     excalidraw.updateScene({
       elements: toExcalidraw(pendingDraft.elements),
@@ -414,12 +452,12 @@ function Workspace({
     });
   };
 
-  const resetViewport = () => {
+  const placeViewport = (place: typeof initialViewport) => {
     const excalidraw = apiRef.current;
     if (excalidraw === null) return;
     const { width, height } = excalidraw.getAppState();
     excalidraw.updateScene({
-      appState: initialViewport(excalidraw.getSceneElements(), width, height, isCompact()),
+      appState: place(excalidraw.getSceneElements(), width, height, isCompact()),
       captureUpdate: CaptureUpdateAction.NEVER,
     });
   };
@@ -461,6 +499,17 @@ function Workspace({
   const onNoteSaved = (note: Note) =>
     setNotes((current) => [...current.filter((item) => item.nodeKey !== note.nodeKey), note]);
 
+  // Note drafts live here (and in localStorage) so a tab or node switch that unmounts the editor
+  // brings the unsaved text back.
+  const onNoteDraft = (nodeKey: string, draft: NoteDraft | null) => {
+    writeNoteDraft(project, artifact, nodeKey, draft);
+    setNoteDrafts((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([key]) => key !== nodeKey));
+      if (draft !== null) next[nodeKey] = draft;
+      return next;
+    });
+  };
+
   return (
     <main className="split" data-testid="figure-view">
       <section className="canvas-pane" data-testid="canvas-pane">
@@ -495,19 +544,19 @@ function Workspace({
           <fieldset className="zoom-group" aria-label="확대/축소" data-testid="zoom-group">
             <button
               type="button"
-              className="secondary"
+              className="secondary zoom-step"
               aria-label="축소"
               onClick={() => zoomBy(1 / 1.25)}
               data-testid="zoom-out"
             >
               −
             </button>
-            <span className="zoom-level" data-testid="zoom-level">
+            <span className="zoom-level zoom-step" data-testid="zoom-level">
               {zoomPercent}%
             </span>
             <button
               type="button"
-              className="secondary"
+              className="secondary zoom-step"
               aria-label="확대"
               onClick={() => zoomBy(1.25)}
               data-testid="zoom-in"
@@ -517,10 +566,18 @@ function Workspace({
             <button
               type="button"
               className="secondary"
-              onClick={resetViewport}
+              onClick={() => placeViewport(initialViewport)}
               data-testid="zoom-reset"
             >
               처음 보기
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => placeViewport(fitAllViewport)}
+              data-testid="zoom-fit"
+            >
+              전체 보기
             </button>
           </fieldset>
         </div>
@@ -601,6 +658,8 @@ function Workspace({
               spec={figure.spec}
               notes={notes}
               selected={selected}
+              drafts={noteDrafts}
+              onDraft={onNoteDraft}
               onSaved={onNoteSaved}
             />
           )}

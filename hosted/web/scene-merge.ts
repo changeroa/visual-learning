@@ -4,52 +4,67 @@ export function isAgentElement(element: SceneElement): boolean {
   return element.customData?.["owner"] === "agent";
 }
 
-// Overlay the local drawing onto the server's latest scene: every local human-owned element (no
-// agent customData) replaces or joins the server list by id, and any local element the server
-// does not have is appended. Agent elements the server still has keep the server's version.
-export function mergeOntoLatest(
+function live(element: SceneElement | undefined): SceneElement | undefined {
+  return element?.isDeleted === true ? undefined : element;
+}
+
+function sameRevision(a: SceneElement, b: SceneElement): boolean {
+  return a["version"] === b["version"] && a["versionNonce"] === b["versionNonce"];
+}
+
+// Three-way merge of the local drawing onto the server's latest scene. `base` is the server scene
+// at the token the editor loaded or last saved; `local` includes deleted elements. Agent-owned
+// elements always come from the server. For each human-owned id:
+// - created locally (not in base): the local version;
+// - deleted locally (in base, absent or isDeleted locally): gone, unless the server changed it
+//   since base (version or versionNonce differs), then the server version;
+// - changed locally (version or versionNonce differs from base): the local version;
+// - otherwise the server version, including the server's own deletion.
+// Server order is kept; locally created or server-deleted-but-locally-changed elements follow.
+export function mergeThreeWay(
+  base: readonly SceneElement[],
   server: readonly SceneElement[],
   local: readonly SceneElement[],
 ): SceneElement[] {
-  const serverIds = new Set(server.map((element) => element.id));
-  const overlay = new Map<string, SceneElement>();
-  for (const element of local)
-    if (!isAgentElement(element) || !serverIds.has(element.id)) overlay.set(element.id, element);
-  const merged = server.map((element) => {
-    const replacement = overlay.get(element.id);
-    if (replacement === undefined) return element;
-    overlay.delete(element.id);
-    return replacement;
-  });
-  return [...merged, ...overlay.values()];
-}
-
-export type Draft = { baseToken: string; elements: SceneElement[]; savedAt: string };
-
-export function draftKey(project: string, artifact: string): string {
-  return `visual-atlas:draft:${project}:${artifact}`;
-}
-
-export function readDraft(project: string, artifact: string): Draft | null {
-  const raw = window.localStorage.getItem(draftKey(project, artifact));
-  if (raw === null) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<Draft>;
-    if (typeof parsed.baseToken !== "string" || !Array.isArray(parsed.elements)) return null;
-    return {
-      baseToken: parsed.baseToken,
-      elements: parsed.elements,
-      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : "",
-    };
-  } catch {
-    return null;
+  const baseById = new Map(base.map((element) => [element.id, element]));
+  const localById = new Map(local.map((element) => [element.id, element]));
+  const pick = (id: string, fromServer: SceneElement | undefined): SceneElement | undefined => {
+    const fromBase = live(baseById.get(id));
+    const fromLocal = localById.get(id);
+    const owner = fromServer ?? fromLocal ?? fromBase;
+    if (owner === undefined || isAgentElement(owner)) return fromServer;
+    const localLive = live(fromLocal);
+    if (fromBase === undefined) return localLive ?? fromServer;
+    if (localLive === undefined)
+      return fromServer !== undefined && !sameRevision(fromServer, fromBase)
+        ? fromServer
+        : undefined;
+    return sameRevision(localLive, fromBase) ? fromServer : localLive;
+  };
+  const merged: SceneElement[] = [];
+  const seen = new Set<string>();
+  for (const element of server) {
+    if (element.isDeleted === true) continue;
+    seen.add(element.id);
+    const picked = pick(element.id, element);
+    if (picked !== undefined) merged.push(picked);
   }
+  for (const element of local) {
+    if (seen.has(element.id)) continue;
+    seen.add(element.id);
+    const picked = pick(element.id, undefined);
+    if (picked !== undefined) merged.push(picked);
+  }
+  return merged;
 }
 
-export function writeDraft(project: string, artifact: string, draft: Draft): void {
-  window.localStorage.setItem(draftKey(project, artifact), JSON.stringify(draft));
-}
-
-export function clearDraft(project: string, artifact: string): void {
-  window.localStorage.removeItem(draftKey(project, artifact));
+// The merge only compares base revisions, so drafts store the base scene's revision stamps.
+export function baseStamps(elements: readonly SceneElement[]): SceneElement[] {
+  return elements
+    .filter((element) => element.isDeleted !== true)
+    .map((element) => ({
+      id: element.id,
+      version: element["version"],
+      versionNonce: element["versionNonce"],
+    }));
 }

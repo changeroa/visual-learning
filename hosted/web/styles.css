@@ -122,6 +122,11 @@ button:disabled {
   color: var(--warn);
 }
 
+.unsaved {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .card-list,
 .figure-grid {
   list-style: none;
@@ -205,9 +210,10 @@ button:disabled {
   font-size: 0.88em;
 }
 
-/* Our zoom controls live in the toolbar, outside the canvas; shown where Excalidraw's are hidden. */
+/* Our view controls live in the toolbar, outside the canvas. 처음 보기 / 전체 보기 always show; the
+   -/%/+ steps only where Excalidraw's own zoom control is hidden. */
 .zoom-group {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 4px;
   margin: 0;
@@ -217,6 +223,10 @@ button:disabled {
 
 .zoom-group button {
   padding: 2px 10px;
+}
+
+.zoom-group .zoom-step {
+  display: none;
 }
 
 .zoom-level {
@@ -456,8 +466,8 @@ button:disabled {
     height: 64vh;
   }
 
-  .zoom-group {
-    display: flex;
+  .zoom-group .zoom-step {
+    display: inline-block;
   }
 
   /* In view mode Excalidraw's floating menus would sit on top of the figure; the toolbar's zoom

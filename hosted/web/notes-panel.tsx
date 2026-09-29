@@ -1,8 +1,49 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, errorText, type Note, type NoteConflict, noteConflictOf, type Spec } from "./api";
 import { firstLine, shortTime } from "./ui";
 
 export const figureNoteKey = "_figure";
+
+// An unsaved note body and the note token it was typed against (null: no server note yet).
+export type NoteDraft = { body: string; baseToken: string | null; savedAt: string };
+export type NoteDrafts = Readonly<Record<string, NoteDraft>>;
+export type OnNoteDraft = (nodeKey: string, draft: NoteDraft | null) => void;
+
+function noteDraftPrefix(project: string, artifact: string): string {
+  return `visual-atlas:note-draft:${project}:${artifact}:`;
+}
+
+export function readNoteDrafts(project: string, artifact: string): Record<string, NoteDraft> {
+  const prefix = noteDraftPrefix(project, artifact);
+  const drafts: Record<string, NoteDraft> = {};
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key === null || !key.startsWith(prefix)) continue;
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(key) ?? "") as Partial<NoteDraft>;
+      if (typeof parsed.body !== "string") continue;
+      drafts[key.slice(prefix.length)] = {
+        body: parsed.body,
+        baseToken: typeof parsed.baseToken === "string" ? parsed.baseToken : null,
+        savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : "",
+      };
+    } catch {
+      // An unparsable entry is not a draft; leave it for the user's storage tools.
+    }
+  }
+  return drafts;
+}
+
+export function writeNoteDraft(
+  project: string,
+  artifact: string,
+  nodeKey: string,
+  draft: NoteDraft | null,
+): void {
+  const key = `${noteDraftPrefix(project, artifact)}${nodeKey}`;
+  if (draft === null) window.localStorage.removeItem(key);
+  else window.localStorage.setItem(key, JSON.stringify(draft));
+}
 
 function NoteEditor({
   project,
@@ -10,6 +51,8 @@ function NoteEditor({
   nodeKey,
   title,
   note,
+  draft,
+  onDraft,
   onSaved,
 }: {
   project: string;
@@ -17,24 +60,43 @@ function NoteEditor({
   nodeKey: string;
   title: string;
   note: Note | undefined;
+  draft: NoteDraft | undefined;
+  onDraft: OnNoteDraft;
   onSaved: (note: Note) => void;
 }) {
-  const [body, setBody] = useState(note?.body ?? "");
-  const [token, setToken] = useState<string | null>(note?.token ?? null);
+  const [body, setBody] = useState(draft?.body ?? note?.body ?? "");
+  const [token, setToken] = useState<string | null>(
+    draft === undefined ? (note?.token ?? null) : draft.baseToken,
+  );
   const [savedBody, setSavedBody] = useState(note?.body ?? "");
   const [conflict, setConflict] = useState<{ current: NoteConflict } | null>(null);
-  const [status, setStatus] = useState<string>(note === undefined ? "새 메모" : "저장됨");
+  const [status, setStatus] = useState<string>(
+    draft !== undefined ? "수정됨" : note === undefined ? "새 메모" : "저장됨",
+  );
   const [busy, setBusy] = useState(false);
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
+
+  const edit = (value: string, base: string, baseToken: string | null) => {
+    setBody(value);
+    onDraft(
+      nodeKey,
+      value === base ? null : { body: value, baseToken, savedAt: new Date().toISOString() },
+    );
+  };
 
   const send = async (expectedToken: string | null) => {
+    const sent = body;
     setBusy(true);
     setStatus("저장 중…");
     try {
-      const result = await api.saveNote(project, artifact, nodeKey, expectedToken, body);
+      const result = await api.saveNote(project, artifact, nodeKey, expectedToken, sent);
       setToken(result.token);
-      setSavedBody(body);
+      setSavedBody(sent);
       setConflict(null);
       setStatus("저장됨");
+      // Text typed while the request was in flight stays a draft against the new token.
+      edit(bodyRef.current, sent, result.token);
       onSaved({
         nodeKey,
         body,
@@ -56,8 +118,9 @@ function NoteEditor({
 
   const takeServer = () => {
     if (conflict === null) return;
-    setBody(conflict.current?.body ?? "");
-    setSavedBody(conflict.current?.body ?? "");
+    const serverBody = conflict.current?.body ?? "";
+    edit(serverBody, serverBody, conflict.current?.token ?? null);
+    setSavedBody(serverBody);
     setToken(conflict.current?.token ?? null);
     setConflict(null);
     setStatus("서버 버전으로 교체함");
@@ -71,7 +134,7 @@ function NoteEditor({
         value={body}
         rows={6}
         onChange={(event) => {
-          setBody(event.target.value);
+          edit(event.target.value, savedBody, token);
           if (conflict === null) setStatus(event.target.value === savedBody ? "저장됨" : "수정됨");
         }}
       />
@@ -88,6 +151,11 @@ function NoteEditor({
           {status}
           {token === null ? "" : ` · ${token}`}
         </span>
+        {draft !== undefined && (
+          <span className="unsaved" data-testid={`note-unsaved-${nodeKey}`}>
+            저장 안 됨
+          </span>
+        )}
       </div>
       {conflict !== null && (
         <div className="note-conflict" role="alert" data-testid={`note-conflict-${nodeKey}`}>
@@ -130,6 +198,8 @@ export function NotesPanel({
   spec,
   notes,
   selected,
+  drafts,
+  onDraft,
   onSaved,
 }: {
   project: string;
@@ -137,6 +207,8 @@ export function NotesPanel({
   spec: Spec;
   notes: Note[];
   selected: string | null;
+  drafts: NoteDrafts;
+  onDraft: OnNoteDraft;
   onSaved: (note: Note) => void;
 }) {
   const byKey = new Map(notes.map((note) => [note.nodeKey, note]));
@@ -151,6 +223,8 @@ export function NotesPanel({
         nodeKey={figureNoteKey}
         title="그림 메모"
         note={byKey.get(figureNoteKey)}
+        draft={drafts[figureNoteKey]}
+        onDraft={onDraft}
         onSaved={onSaved}
       />
       {selected === null || claim === undefined ? (
@@ -165,6 +239,8 @@ export function NotesPanel({
           nodeKey={selected}
           title={`노드 메모: ${firstLine(claim.label)} (${selected})`}
           note={byKey.get(selected)}
+          draft={drafts[selected]}
+          onDraft={onDraft}
           onSaved={onSaved}
         />
       )}
