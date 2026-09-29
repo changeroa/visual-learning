@@ -337,13 +337,20 @@ export async function publish(input: {
       ...(input.repoRoot === undefined ? {} : { repoRoot: input.repoRoot }),
     },
   );
-  const sent = payload.figures.map((figure) => String(figure.spec.artifactId));
-  const response = publishResponseSchema(sent).safeParse(
-    await request(remote, "/api/publish", credentials, input.env, JSON.stringify(payload)),
-  );
-  // The body is server-controlled, so neither it nor the zod issues reach the message.
-  if (!response.success) throw new RuntimeError(invalidPublishResponse);
-  return { projectId: payload.projectId, results: response.data.results };
+  // One figure per request, in order, keeps each Worker invocation inside the Workers Free
+  // CPU budget. Every request repeats the idempotent project upsert, and a conflict outcome
+  // does not stop later figures, so the aggregated results match a single batched request.
+  const results: PublishResult[] = [];
+  for (const figure of payload.figures) {
+    const body = JSON.stringify({ ...payload, figures: [figure] });
+    const response = publishResponseSchema([String(figure.spec.artifactId)]).safeParse(
+      await request(remote, "/api/publish", credentials, input.env, body),
+    );
+    // The body is server-controlled, so neither it nor the zod issues reach the message.
+    if (!response.success) throw new RuntimeError(invalidPublishResponse);
+    results.push(...response.data.results);
+  }
+  return { projectId: payload.projectId, results };
 }
 
 type PulledFile = { readonly path: string; readonly bytes: string };
