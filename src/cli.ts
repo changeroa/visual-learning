@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { z } from "zod";
 import { optional, parseOptions, required } from "./arguments";
 import { runSpecCommand } from "./cli-spec";
@@ -9,27 +8,14 @@ import { compileInteractiveAuthoringDocument } from "./interactive-authoring-com
 import { interactiveAuthoringJsonSchema } from "./interactive-authoring-schema";
 import { readJson, sha256, writeResult } from "./io";
 import { reviewLearningSpec } from "./learning-review";
-import {
-  bootstrapSample,
-  createRenderedSpec,
-  createSpec,
-  initializeProject,
-  openVaultPath,
-  openWorkingArtifact,
-  validateSpec,
-} from "./operations";
-import { preflight } from "./preflight";
+import { bootstrapSample, createSpec, initializeProject, validateSpec } from "./operations";
 import { parseVisualNoteSpec } from "./schema";
 import { exportSeries } from "./session-export";
-
-const officialCli = "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli";
-const evidenceRoot = join(process.cwd(), ".omo/evidence/agent-visual-learning-vault");
 
 const help = `visual-note 0.1.0
 Usage: visual-note <command> [options]
 
 Commands:
-  preflight  verify the exact vault and live official Excalidraw runtime
   init       initialize project metadata from a read-only local source
   bootstrap  stage a repeatable study-workflow sample bundle for a source
   create     validate and publish a new normalized visual-note spec
@@ -40,30 +26,17 @@ Commands:
   authoring-schema  emit the renderer-independent interactive authoring JSON Schema
   compile-authoring validate and compile before/after authoring JSON for a web renderer
   review-learning check a spec's learning layer against research-backed figure rules
-  open       open a vault-relative artifact through the official CLI
   restore    validate a restore spec contract without mutation
   contract   emit the deterministic cross-agent contract sentinel
 `;
 
 function run(command: string, argv: readonly string[]): void {
   switch (command) {
-    case "preflight": {
-      const options = parseOptions(argv, new Set(["--obsidian-cli", "--expected-vault"]));
-      writeResult(
-        preflight(required(options, "--obsidian-cli"), required(options, "--expected-vault")),
-        options.json,
-      );
-      return;
-    }
     case "init": {
-      const options = parseOptions(
-        argv,
-        new Set(["--vault", "--expected-vault", "--project", "--source"]),
-      );
+      const options = parseOptions(argv, new Set(["--root", "--project", "--source"]));
       writeResult(
         initializeProject({
-          vault: required(options, "--vault"),
-          expectedVault: required(options, "--expected-vault"),
+          root: required(options, "--root"),
           project: required(options, "--project"),
           source: required(options, "--source"),
         }),
@@ -72,15 +45,11 @@ function run(command: string, argv: readonly string[]): void {
       return;
     }
     case "bootstrap": {
-      const options = parseOptions(
-        argv,
-        new Set(["--vault", "--expected-vault", "--project", "--source", "--bundle"]),
-      );
+      const options = parseOptions(argv, new Set(["--root", "--project", "--source", "--bundle"]));
       const bundlePath = optional(options, "--bundle");
       writeResult(
         bootstrapSample({
-          vault: required(options, "--vault"),
-          expectedVault: required(options, "--expected-vault"),
+          root: required(options, "--root"),
           project: required(options, "--project"),
           source: required(options, "--source"),
           ...(bundlePath === undefined ? {} : { bundlePath }),
@@ -90,42 +59,15 @@ function run(command: string, argv: readonly string[]): void {
       return;
     }
     case "create": {
-      const options = parseOptions(
-        argv,
-        new Set([
-          "--vault",
-          "--expected-vault",
-          "--verified-vault-id",
-          "--project",
-          "--spec",
-          "--obsidian-cli",
-          "--runtime-receipt",
-          "--plugin-receipt",
-          "--assert-no-write",
-        ]),
-        new Set(["--assert-no-write"]),
+      const options = parseOptions(argv, new Set(["--root", "--project", "--spec"]));
+      writeResult(
+        createSpec({
+          root: required(options, "--root"),
+          project: required(options, "--project"),
+          specPath: required(options, "--spec"),
+        }),
+        options.json,
       );
-      const common = {
-        vault: required(options, "--vault"),
-        expectedVault: required(options, "--expected-vault"),
-        project: required(options, "--project"),
-        specPath: required(options, "--spec"),
-      } as const;
-      const verifiedVaultId = optional(options, "--verified-vault-id");
-      const result =
-        verifiedVaultId === undefined
-          ? createSpec(common)
-          : createRenderedSpec({
-              ...common,
-              verifiedVaultId,
-              cli: optional(options, "--obsidian-cli") ?? officialCli,
-              runtimeReceipt:
-                optional(options, "--runtime-receipt") ?? `${evidenceRoot}/task-2-preflight.json`,
-              pluginReceipt:
-                optional(options, "--plugin-receipt") ??
-                `${evidenceRoot}/task-2-plugin-install.json`,
-            });
-      writeResult(result, options.json);
       return;
     }
     case "export-series": {
@@ -173,37 +115,6 @@ function run(command: string, argv: readonly string[]): void {
       const options = parseOptions(argv, new Set(["--spec"]));
       writeResult(
         compileInteractiveAuthoringDocument(readJson(required(options, "--spec"))),
-        options.json,
-      );
-      return;
-    }
-    case "open": {
-      const options = parseOptions(
-        argv,
-        new Set([
-          "--obsidian-cli",
-          "--vault",
-          "--expected-vault",
-          "--path",
-          "--project",
-          "--artifact-id",
-        ]),
-      );
-      const path = optional(options, "--path");
-      writeResult(
-        path !== undefined
-          ? openVaultPath(
-              required(options, "--obsidian-cli"),
-              required(options, "--expected-vault"),
-              path,
-            )
-          : openWorkingArtifact(
-              required(options, "--obsidian-cli"),
-              required(options, "--vault"),
-              required(options, "--expected-vault"),
-              required(options, "--project"),
-              required(options, "--artifact-id"),
-            ),
         options.json,
       );
       return;

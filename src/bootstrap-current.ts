@@ -27,12 +27,12 @@ function hasExpectedBootstrapRevision(projectRoot: string, artifactId: string): 
 }
 
 export function currentProjectState(input: {
-  readonly vault: string;
+  readonly root: string;
   readonly project: string;
   readonly metadata: { readonly root: string; readonly commit: string | null };
   readonly bundlePath?: string;
 }): { readonly status: "ALREADY_CURRENT"; readonly artifactCount: number } | null {
-  const projectRoot = join(input.vault, "Engineering Atlas/10 Projects", input.project);
+  const projectRoot = join(input.root, "Engineering Atlas/10 Projects", input.project);
   if (!existsSync(projectRoot)) return null;
   const status = lstatSync(projectRoot);
   if (status.isSymbolicLink() || !status.isDirectory()) {

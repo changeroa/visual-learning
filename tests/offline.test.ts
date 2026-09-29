@@ -5,22 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertNoPlaintext,
-  buildRegistryJson,
   chainFromSnapshot,
   classifyNetworkDenial,
   DENY_NETWORK_PROFILE,
   descentProven,
-  OFFLINE_CLI_STUB,
   parsePsSnapshot,
   scanRootsForPlaintext,
   sentinelRecord,
   treeDigest,
   validateProfileContent,
-  validateStubScript,
 } from "../scripts/qa/offline-support";
 
 const profilePath = join(import.meta.dir, "fixtures/deny-network.sb");
-const stubPath = join(import.meta.dir, "fixtures/offline-obsidian-cli");
 
 describe("offline sandbox profile", () => {
   test("deny-network.sb holds exactly the required deny-network profile", () => {
@@ -36,27 +32,6 @@ describe("offline sandbox profile", () => {
     expect(
       validateProfileContent("(version 1) (allow default) (deny network*) (allow network*)\n"),
     ).toMatchObject({ valid: false });
-  });
-});
-
-describe("offline Obsidian CLI stub", () => {
-  test("fixture is the exact filesystem-only stub and is executable", async () => {
-    // Given / When
-    const content = readFileSync(stubPath, "utf8");
-    const mode = await Bun.file(stubPath)
-      .stat()
-      .then((status) => status.mode);
-    // Then
-    expect(content).toBe(OFFLINE_CLI_STUB);
-    expect(validateStubScript(content)).toEqual({ valid: true });
-    expect(mode & 0o111).not.toBe(0);
-  });
-
-  test("validateStubScript rejects incomplete or network-capable stubs", () => {
-    expect(validateStubScript("#!/bin/sh\nexit 0\n")).toMatchObject({ valid: false });
-    expect(validateStubScript("#!/bin/sh\n/usr/bin/curl https://example.invalid\n")).toMatchObject({
-      valid: false,
-    });
   });
 });
 
@@ -98,15 +73,6 @@ describe("network denial classifier", () => {
         stderr: "curl: (26) read error",
       }),
     ).toBe("not-denied");
-  });
-});
-
-describe("sandbox home registry", () => {
-  test("registry maps the verified vault id to the sandbox vault path", () => {
-    // Given / When
-    const registry = JSON.parse(buildRegistryJson("offline-fixture", "/tmp/offline-vault"));
-    // Then
-    expect(registry).toEqual({ vaults: { "offline-fixture": { path: "/tmp/offline-vault" } } });
   });
 });
 
@@ -168,7 +134,7 @@ describe("sandbox descent proof", () => {
     const snapshotText = [
       "   100      1   Mon Aug 18 12:00:00 2026  /sbin/launchd",
       "   200    100   Mon Aug 18 12:00:01 2026  bun scripts/qa/offline.ts --out receipt.json",
-      "   300    200   Mon Aug 18 12:00:02 2026  /usr/bin/sandbox-exec -f deny-network.sb bun bin/visual-note open",
+      "   300    200   Mon Aug 18 12:00:02 2026  /usr/bin/sandbox-exec -f deny-network.sb bun bin/visual-note create",
       "   301    300   Mon Aug 18 12:00:02 2026  /bin/sh stub",
     ].join("\n");
     // When
@@ -182,7 +148,7 @@ describe("sandbox descent proof", () => {
   });
 });
 
-describe("vault tree digest", () => {
+describe("root tree digest", () => {
   test("digest is stable until content changes", () => {
     // Given
     const root = mkdtempSync(join(tmpdir(), "offline-digest-"));
