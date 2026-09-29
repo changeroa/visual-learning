@@ -1,0 +1,491 @@
+:root {
+  --ink: #1f2933;
+  --muted: #5f6b76;
+  --line: #d9dee3;
+  --paper: #ffffff;
+  --wash: #f5f7f9;
+  --accent: #1971c2;
+  --accent-wash: #e7f5ff;
+  --ok: #2f9e44;
+  --warn: #e8590c;
+  --warn-wash: #fff4e6;
+  --header: 48px;
+  color: var(--ink);
+  background: var(--wash);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--wash);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 6px 0;
+}
+
+button {
+  font: inherit;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: var(--paper);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  height: var(--header);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.crumbs {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.brand {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.crumb a {
+  color: var(--accent);
+}
+
+.user {
+  color: var(--muted);
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page {
+  padding: 24px;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--warn);
+}
+
+.unsaved {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.card-list,
+.figure-grid {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.figure-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-link:hover {
+  background: var(--accent-wash);
+}
+
+.split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.page {
+  overflow-y: auto;
+}
+
+.canvas-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.figure-title {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toggle {
+  background: var(--paper);
+  color: var(--accent);
+}
+
+.toggle.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.save-status {
+  font-size: 0.88em;
+}
+
+/* Our view controls live in the toolbar, outside the canvas. 처음 보기 / 전체 보기 always show; the
+   -/%/+ steps only where Excalidraw's own zoom control is hidden. */
+.zoom-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.zoom-group button {
+  padding: 2px 10px;
+}
+
+.zoom-group .zoom-step {
+  display: none;
+}
+
+.zoom-level {
+  min-width: 3.2em;
+  text-align: center;
+  font-size: 0.88em;
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-wash);
+  border-bottom: 1px solid var(--line);
+}
+
+.banner.conflict {
+  background: var(--warn-wash);
+  border-bottom-color: var(--warn);
+}
+
+.excalidraw-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.excalidraw-host > .excalidraw {
+  position: absolute;
+  inset: 0;
+}
+
+.side-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper);
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--muted);
+  padding: 10px;
+  border-bottom: 3px solid transparent;
+}
+
+.tab.active {
+  color: var(--ink);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
+}
+
+.tab-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 32px;
+}
+
+.tab-body h3 {
+  margin: 18px 0 6px;
+  font-size: 1em;
+}
+
+.tab-body h4 {
+  margin: 10px 0 4px;
+  font-size: 0.92em;
+  color: var(--muted);
+}
+
+.question {
+  font-weight: 600;
+}
+
+.route {
+  padding-left: 0;
+  list-style: none;
+}
+
+.route li {
+  margin-bottom: 10px;
+}
+
+.route-step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.route-step.active {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.route-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.85em;
+}
+
+.route p {
+  margin: 4px 0 0 8px;
+}
+
+.glossary div {
+  margin-bottom: 6px;
+}
+
+.glossary dd {
+  margin: 0 0 0 12px;
+}
+
+.checks .check-answer {
+  background: var(--accent-wash);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.analogy {
+  border-left: 3px solid var(--line);
+  padding-left: 10px;
+  margin-bottom: 12px;
+}
+
+.claims,
+.verify-list,
+.orphaned {
+  list-style: none;
+  padding: 0;
+}
+
+.claim,
+.verify,
+.orphaned li {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.claim.active {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.status {
+  font-size: 0.88em;
+}
+
+.status-fact {
+  color: var(--ok);
+}
+
+.status-inference {
+  color: var(--accent);
+}
+
+.status-question {
+  color: var(--warn);
+}
+
+.evidence {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.note-editor textarea {
+  width: 100%;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.note-conflict {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--warn-wash);
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+}
+
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .app {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .split {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .canvas-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* The drawing surface itself gets >= 60vh; the toolbar and banners stack above it. */
+  .excalidraw-host {
+    flex: none;
+    height: 64vh;
+  }
+
+  .zoom-group .zoom-step {
+    display: inline-block;
+  }
+
+  /* In view mode Excalidraw's floating menus would sit on top of the figure; the toolbar's zoom
+     group replaces them. Edit mode keeps Excalidraw's full UI for drawing. */
+  .excalidraw-host.viewing .layer-ui__wrapper,
+  .excalidraw-host.viewing .App-bottom-bar {
+    display: none;
+  }
+
+  .side-pane {
+    min-height: 60vh;
+  }
+
+  .tab-body {
+    overflow-y: visible;
+  }
+
+  .compare {
+    grid-template-columns: 1fr;
+  }
+}
