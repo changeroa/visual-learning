@@ -148,6 +148,21 @@ VISUAL_ATLAS_DEV_JWT=<test-signed JWT> bin/visual-note publish --remote http://1
   --root /path/to/root --project my-project
 ```
 
+### Limits
+
+The atlas stays on Workers Free, which caps each request at 10 ms of CPU time; the owner accepted this risk on 2026-09-29. Measured on the live Worker with `wrangler tail` (2026-09-29):
+
+- `POST /api/publish`, one figure per request: 14-41 ms CPU, over the limit.
+- `GET /api/projects/:p/figures/:a`: 5-6 ms; `GET /api/me`: 1-3 ms.
+- Saving a scene (`PUT`) was not measured.
+
+Publish and save requests can therefore fail with Cloudflare error 1102 (Worker exceeded resource limits). To recover:
+
+- **Publish:** re-run `visual-note publish`. It is safe but not idempotent: each run refreshes every named figure again, creating a new cas token and a new revision, so a retry re-sends figures that had already succeeded, not just the ones that failed. Human edits are preserved by the merge; a browser tab still holding an older token gets a conflict on its next save and can use "최신본에 내 그림 합치기" to merge in its local changes.
+- **Save:** a failed save keeps the browser draft, so save again.
+
+Workers Paid ($5/month) removes the 10 ms limit.
+
 ## Development
 
 ```sh
