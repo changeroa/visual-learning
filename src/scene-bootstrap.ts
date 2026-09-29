@@ -2,17 +2,6 @@ import type { ExcalidrawScene } from "./excalidraw-file";
 import { planScene } from "./renderer-plan";
 import type { VisualNoteSpec } from "./schema";
 
-const CATEGORY_PALETTE = {
-  cloudflare: { stroke: "#e8590c", background: "#fff4e6" },
-  aws: { stroke: "#f08c00", background: "#fff9db" },
-  external: { stroke: "#64748b", background: "#f8fafc" },
-  data: { stroke: "#1971c2", background: "#e7f5ff" },
-  runtime: { stroke: "#7950f2", background: "#f3f0ff" },
-  security: { stroke: "#2f9e44", background: "#ebfbee" },
-  risk: { stroke: "#e03131", background: "#fff5f5" },
-  neutral: { stroke: "#475569", background: "#f8fafc" },
-} as const;
-
 function hashId(value: string): number {
   let hash = 0;
   for (const character of value) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
@@ -26,8 +15,6 @@ export function sceneFromSpec(spec: VisualNoteSpec, source: string): ExcalidrawS
     version: 2,
     source,
     elements: plan.elements.map((element, index) => {
-      const palette = CATEGORY_PALETTE[element.customData.category];
-      const isShape = ["rectangle", "ellipse", "diamond"].includes(element.type);
       return {
         id: element.id,
         type: element.type,
@@ -36,9 +23,9 @@ export function sceneFromSpec(spec: VisualNoteSpec, source: string): ExcalidrawS
         width: element.width,
         height: element.height,
         angle: 0,
-        strokeColor: palette.stroke,
-        backgroundColor: isShape ? palette.background : "transparent",
-        fillStyle: "solid",
+        strokeColor: element.style.strokeColor,
+        backgroundColor: element.style.backgroundColor,
+        fillStyle: element.style.fillStyle,
         strokeWidth: element.role === "title" ? 1 : 2,
         strokeStyle: element.customData.status === "inference" ? "dashed" : "solid",
         roughness: element.role === "edge-line" ? 1 : element.role.startsWith("frame") ? 0 : 0.7,
@@ -69,7 +56,7 @@ export function sceneFromSpec(spec: VisualNoteSpec, source: string): ExcalidrawS
                     : element.role === "edge-label"
                       ? 13
                       : 20,
-              fontFamily: element.role === "edge-label" ? 2 : 1,
+              fontFamily: element.style.fontFamily ?? 1,
               textAlign: element.role === "frame-label" ? "left" : "center",
               verticalAlign: "middle",
               containerId: null,
