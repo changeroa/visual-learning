@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import {
   copyFileSync,
@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -18,6 +19,9 @@ import { sha256 } from "../src/io";
 const script = join(import.meta.dir, "../scripts/qa/render-gallery.ts");
 const fixtures = join(import.meta.dir, "fixtures/kinds");
 const denseFixture = join(fixtures, "dense/bundle.json");
+const existingPairPrefix = `visual-note-gallery-sigterm-existing-${process.pid}-`;
+const firstRunPrefix = `visual-note-gallery-sigterm-first-${process.pid}-`;
+const testDirectories = new Set<string>();
 
 type RunResult = { readonly code: number; readonly stdout: string; readonly stderr: string };
 type Baseline = {
@@ -91,8 +95,29 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  const remainingDirectories = readdirSync(tmpdir(), { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        (entry.name.startsWith(existingPairPrefix) || entry.name.startsWith(firstRunPrefix)),
+    )
+    .map((entry) => entry.name);
   rmSync(sharedRoot, { recursive: true, force: true });
+  expect(remainingDirectories).toEqual([]);
 });
+
+afterEach(() => {
+  for (const directory of testDirectories) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  testDirectories.clear();
+});
+
+function createTestDirectory(prefix: string): string {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  testDirectories.add(directory);
+  return directory;
+}
 
 function preparedBaseline(): Baseline {
   if (baseline === undefined) throw new TypeError("gallery baseline setup did not run");
@@ -113,7 +138,7 @@ describe("task 8 gallery QA script", () => {
   });
 
   test("SIGTERM with an existing pair leaves recoverable transaction state and next same command republishes cleanly", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "visual-note-gallery-sigterm-existing-"));
+    const directory = createTestDirectory(existingPairPrefix);
     const out = join(directory, "gallery.json");
     const png = join(directory, "task-8-gallery.png");
     writeFileSync(out, '{"before":true}\n');
@@ -138,7 +163,7 @@ describe("task 8 gallery QA script", () => {
   });
 
   test("SIGTERM on a first run leaves only recoverable state and next same command removes partials before publish", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "visual-note-gallery-sigterm-first-"));
+    const directory = createTestDirectory(firstRunPrefix);
     const out = join(directory, "gallery.json");
     const png = join(directory, "task-8-gallery.png");
     const paths = bundleTransactionPaths(out, png);
