@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InputError } from "../src/errors";
@@ -27,11 +35,15 @@ function run(args: readonly string[]): string {
 }
 
 function repository(): { readonly root: string; readonly commit: string } {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-verify-record-")));
-  roots.push(root);
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-verify-record-")));
+  roots.push(workspace);
+  const root = join(workspace, "repo");
+  mkdirSync(join(root, "src"), { recursive: true });
   run(["git", "init", "-q", root]);
   writeFileSync(join(root, "README.md"), "fixture | & ; < > $ ` ( ) *\nabcdefghijklmno\n");
-  run(["git", "-C", root, "add", "README.md"]);
+  writeFileSync(join(root, "src/file"), "pattern\n");
+  writeFileSync(join(root, "file"), "one\ntwo\nthree\nfour\nfive\nsix\n");
+  run(["git", "-C", root, "add", "README.md", "src/file", "file"]);
   run([
     "git",
     "-C",
@@ -45,6 +57,14 @@ function repository(): { readonly root: string; readonly commit: string } {
     "fixture",
   ]);
   return { root, commit: run(["git", "-C", root, "rev-parse", "HEAD"]).trim() };
+}
+
+function createOutsideFile(root: string): string {
+  const outside = join(root, "..", "outside");
+  mkdirSync(outside, { recursive: true });
+  const file = join(outside, "secret.txt");
+  writeFileSync(file, "outside secret\n");
+  return file;
 }
 
 function spec(verify: readonly VerifyStep[]): VisualNoteSpec {
@@ -162,6 +182,14 @@ describe("allowlisted local verify recorder", () => {
   test.each([
     ["git configuration injection", "git -c alias.show=status show"],
     ["sed without print-only mode", "sed -e 1p README.md"],
+    ["rg pattern file option", "rg --file=patterns.txt pattern src"],
+    ["attached grep pattern", "grep -esecret ../outside/secret.txt"],
+    ["recursive grep symlink traversal", "grep -R secret ."],
+    ["rg symlink traversal", "rg --follow secret ."],
+    ["wc input file list", "wc --files0-from=../outside/list"],
+    ["ls symlink dereference", "ls -LR ."],
+    ["git repository redirect", "git show --git-dir=outside HEAD"],
+    ["git exclude file", "git ls-files --exclude-from=../outside/patterns"],
   ] as const)("rejects %s", async (_label, command) => {
     const { root } = repository();
 
@@ -186,6 +214,146 @@ describe("allowlisted local verify recorder", () => {
       reason: null,
       exitCode: 0,
       stdout: "fixture | & ; < > $ ` ( ) *\n",
+    });
+  });
+
+  test("rejects cat of an absolute path outside the repository", async () => {
+    const { root } = repository();
+    const outside = createOutsideFile(root);
+
+    const records = await recordVerify(
+      spec([{ semanticId: "recorder", how: "reject absolute path", command: `cat '${outside}'` }]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({ status: "not-run", reason: "path outside repo" });
+  });
+
+  test("rejects cat of a parent-relative path outside the repository", async () => {
+    const { root } = repository();
+    createOutsideFile(root);
+
+    const records = await recordVerify(
+      spec([{ semanticId: "recorder", how: "reject parent path", command: "cat ../outside" }]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({ status: "not-run", reason: "path outside repo" });
+  });
+
+  test("rejects an in-repository symlink that points outside", async () => {
+    const { root } = repository();
+    symlinkSync(createOutsideFile(root), join(root, "outside-link"));
+
+    const records = await recordVerify(
+      spec([{ semanticId: "recorder", how: "reject symlink escape", command: "cat outside-link" }]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({ status: "not-run", reason: "path outside repo" });
+  });
+
+  test("rejects parent traversal after an in-repository symlink", async () => {
+    const { root } = repository();
+    createOutsideFile(root);
+    const outsideSubdirectory = join(root, "..", "outside", "subdirectory");
+    mkdirSync(outsideSubdirectory);
+    symlinkSync(outsideSubdirectory, join(root, "outside-directory-link"));
+
+    const records = await recordVerify(
+      spec([
+        {
+          semanticId: "recorder",
+          how: "reject symlink and parent escape",
+          command: "cat outside-directory-link/../secret.txt",
+        },
+      ]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({ status: "not-run", reason: "path outside repo" });
+  });
+
+  test("rejects a tilde-prefixed cat operand", async () => {
+    const { root } = repository();
+
+    const records = await recordVerify(
+      spec([{ semanticId: "recorder", how: "reject home path", command: "cat ~/x" }]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({ status: "not-run", reason: "path outside repo" });
+  });
+
+  test("rejects an rg path outside the repository after its pattern", async () => {
+    const { root } = repository();
+    createOutsideFile(root);
+
+    const records = await recordVerify(
+      spec([
+        {
+          semanticId: "recorder",
+          how: "reject rg path escape",
+          command: "rg secret ../outside",
+        },
+      ]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({ status: "not-run", reason: "path outside repo" });
+  });
+
+  test("allows git show with a revision and confined path", async () => {
+    const { root } = repository();
+
+    const records = await recordVerify(
+      spec([
+        {
+          semanticId: "recorder",
+          how: "read a file at HEAD",
+          command: "git show HEAD:src/file",
+        },
+      ]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({
+      status: "ran",
+      reason: null,
+      exitCode: 0,
+      stdout: "pattern\n",
+    });
+  });
+
+  test("allows rg with a pattern and confined directory", async () => {
+    const { root } = repository();
+
+    const records = await recordVerify(
+      spec([{ semanticId: "recorder", how: "search source", command: "rg pattern src/" }]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({
+      status: "ran",
+      reason: null,
+      exitCode: 0,
+      stdout: "src/file:pattern\n",
+    });
+  });
+
+  test("allows sed print-only mode with its script and a confined file", async () => {
+    const { root } = repository();
+
+    const records = await recordVerify(
+      spec([{ semanticId: "recorder", how: "print five lines", command: "sed -n '1,5p' file" }]),
+      root,
+    );
+
+    expect(records[0]).toMatchObject({
+      status: "ran",
+      reason: null,
+      exitCode: 0,
+      stdout: "one\ntwo\nthree\nfour\nfive\n",
     });
   });
 
@@ -214,7 +382,7 @@ describe("allowlisted local verify recorder", () => {
         {
           semanticId: "recorder",
           how: "follow changes",
-          command: `tail -f '${followed}'`,
+          command: "tail -f followed.txt",
         },
       ]),
       root,
@@ -229,7 +397,7 @@ describe("allowlisted local verify recorder", () => {
       stdout: "ready\n",
       stderr: "",
     });
-    expect(processes).not.toContain(`tail -f ${followed}`);
+    expect(processes).not.toContain("tail -f followed.txt");
   });
 
   test("caps stdout and stderr independently with a truncation marker", async () => {
@@ -259,8 +427,8 @@ describe("allowlisted local verify recorder", () => {
     symlinkSync(root, link);
     const input = spec([]);
 
-    expect(recordVerify(input, join(root, "missing"))).rejects.toBeInstanceOf(InputError);
-    expect(recordVerify(input, file)).rejects.toBeInstanceOf(InputError);
-    expect(recordVerify(input, link)).rejects.toBeInstanceOf(InputError);
+    await expect(recordVerify(input, join(root, "missing"))).rejects.toBeInstanceOf(InputError);
+    await expect(recordVerify(input, file)).rejects.toBeInstanceOf(InputError);
+    await expect(recordVerify(input, link)).rejects.toBeInstanceOf(InputError);
   });
 });
