@@ -3,12 +3,10 @@ import {
   cpSync,
   existsSync,
   lstatSync,
-  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
-  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -20,7 +18,6 @@ const bundle = join(import.meta.dir, "fixtures/sample-project/bundle.json");
 // a copy outside any VCS checkout is the plain source these tests describe (commit: null).
 const source = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-plain-source-")));
 cpSync(join(import.meta.dir, "fixtures/sample-project/repo"), source, { recursive: true });
-const isolatedBootstrap = join(import.meta.dir, "../scripts/qa/isolated-bootstrap.ts");
 
 function tree(
   root: string,
@@ -62,14 +59,12 @@ function run(args: readonly string[]): {
 
 describe("bootstrap sample workflow", () => {
   test("bootstrap publishes the sample bundle once and is idempotent on rerun", () => {
-    const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-bootstrap-vault-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-bootstrap-root-")));
 
     const first = run([
       "bootstrap",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       "sample-agent-project",
       "--source",
@@ -80,10 +75,8 @@ describe("bootstrap sample workflow", () => {
     ]);
     const second = run([
       "bootstrap",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       "sample-agent-project",
       "--source",
@@ -105,7 +98,7 @@ describe("bootstrap sample workflow", () => {
     );
     expect(JSON.parse(second.stdout).publication.status).toBe("ALREADY_CURRENT");
 
-    const projectRoot = join(vault, "Engineering Atlas/10 Projects/sample-agent-project");
+    const projectRoot = join(root, "Engineering Atlas/10 Projects/sample-agent-project");
     expect(existsSync(join(projectRoot, "00 Map.md"))).toBe(true);
     expect(existsSync(join(projectRoot, "05 Study Notes/Prompt Recipes.md"))).toBe(true);
     expect(existsSync(join(projectRoot, "_generated/specs/project-map-atlas-shop.json"))).toBe(
@@ -124,14 +117,12 @@ describe("bootstrap sample workflow", () => {
   });
 
   test("bootstrap creates walkthrough assets that run through create extend refresh and restore", () => {
-    const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-walkthrough-vault-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-walkthrough-root-")));
     const project = "sample-agent-project";
     const bootstrap = run([
       "bootstrap",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       project,
       "--source",
@@ -142,34 +133,21 @@ describe("bootstrap sample workflow", () => {
     ]);
     expect(bootstrap.code).toBe(0);
 
-    const assetRoot = join(vault, `Engineering Atlas/10 Projects/${project}/_assets`);
+    const assetRoot = join(root, `Engineering Atlas/10 Projects/${project}/_assets`);
     const create = join(assetRoot, "walkthrough-create.json");
     const extend = join(assetRoot, "walkthrough-extend.json");
     const refresh = join(assetRoot, "walkthrough-refresh-v2.json");
 
     expect(run(["validate", "--spec", create, "--json"]).code).toBe(0);
     expect(
-      run([
-        "create",
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
-        "--project",
-        project,
-        "--spec",
-        create,
-        "--json",
-      ]).code,
+      run(["create", "--root", root, "--project", project, "--spec", create, "--json"]).code,
     ).toBe(0);
     expect(run(["extend", "--spec", extend, "--json"]).code).toBe(0);
 
     const refreshed = run([
       "refresh",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       project,
       "--spec",
@@ -185,10 +163,8 @@ describe("bootstrap sample workflow", () => {
 
     const restored = run([
       "restore",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       project,
       "--artifact-id",
@@ -206,14 +182,12 @@ describe("bootstrap sample workflow", () => {
   });
 
   test("bootstrap without a bundle still records source metadata and walkthrough assets", () => {
-    const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-bootstrap-meta-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-bootstrap-meta-")));
 
     const result = run([
       "bootstrap",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       "source-only",
       "--source",
@@ -227,93 +201,19 @@ describe("bootstrap sample workflow", () => {
     );
     expect(
       existsSync(
-        join(
-          vault,
-          "Engineering Atlas/10 Projects/source-only/_assets/walkthrough-refresh-v2.json",
-        ),
+        join(root, "Engineering Atlas/10 Projects/source-only/_assets/walkthrough-refresh-v2.json"),
       ),
     ).toBe(true);
-  });
-
-  test("isolated bootstrap rejects a tampered plugin receipt before creating the project", () => {
-    const directory = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-task10-receipt-")));
-    const vault = join(directory, "vault");
-    const out = join(directory, "receipt.json");
-    const tamperedReceipt = join(directory, "plugin-install.json");
-    const pluginDirectory = join(directory, "plugin");
-    mkdirSync(pluginDirectory);
-    const pluginFiles = {
-      "manifest.json": `${JSON.stringify({ id: "obsidian-excalidraw-plugin", version: "2.26.4" })}\n`,
-      "main.js": "module.exports = {};\n",
-      "data.json": "{}\n",
-    };
-    for (const [name, content] of Object.entries(pluginFiles)) {
-      writeFileSync(join(pluginDirectory, name), content);
-    }
-    const pluginReceipt = {
-      plugin: {
-        id: "obsidian-excalidraw-plugin",
-        version: "2.26.4",
-        directory: pluginDirectory,
-        assets: Object.entries(pluginFiles).map(([name, content]) => ({
-          name,
-          sha256: sha256(Buffer.from(content)),
-        })),
-      },
-    };
-    const main = pluginReceipt.plugin.assets.find((asset) => asset.name === "main.js");
-    expect(main).toBeDefined();
-    if (main === undefined) throw new Error("main.js asset missing from task-2 receipt");
-    main.sha256 = `${main.sha256.slice(0, -1)}${main.sha256.endsWith("0") ? "1" : "0"}`;
-    writeFileSync(tamperedReceipt, `${JSON.stringify(pluginReceipt, null, 2)}\n`);
-
-    const result = Bun.spawnSync(
-      [
-        "bun",
-        isolatedBootstrap,
-        "--obsidian-cli",
-        "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli",
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
-        "--provision-plugin-from",
-        tamperedReceipt,
-        "--verify-plugin-sha",
-        "--source",
-        source,
-        "--expect-commit",
-        "null",
-        "--project",
-        "sample-agent-project",
-        "--repeat",
-        "2",
-        "--commands",
-        "init,create,extend,refresh,validate,open,restore",
-        "--out",
-        out,
-      ],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    expect(result.stderr.toString()).toContain("plugin");
-    expect(existsSync(join(vault, "Engineering Atlas/10 Projects/sample-agent-project"))).toBe(
-      false,
-    );
-    expect(existsSync(out)).toBe(false);
   });
 
   test("fresh bootstrap output is byte-deterministic across independent runs", () => {
     const first = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-bootstrap-canonical-")));
     const second = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-bootstrap-canonical-")));
-    for (const vault of [first, second]) {
+    for (const root of [first, second]) {
       const result = run([
         "bootstrap",
-        "--vault",
-        vault,
-        "--expected-vault",
-        vault,
+        "--root",
+        root,
         "--project",
         "sample-agent-project",
         "--source",

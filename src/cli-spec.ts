@@ -8,12 +8,11 @@ export function runSpecCommand(
 ): void {
   const allowed =
     command === "refresh"
-      ? new Set(["--spec", "--vault", "--expected-vault", "--project", "--expected-token"])
+      ? new Set(["--spec", "--root", "--project", "--expected-token"])
       : command === "restore"
         ? new Set([
             "--spec",
-            "--vault",
-            "--expected-vault",
+            "--root",
             "--project",
             "--artifact-id",
             "--revision-token",
@@ -23,30 +22,26 @@ export function runSpecCommand(
   const options = parseOptions(argv, allowed);
   const mutatingRefresh =
     command === "refresh" &&
-    optional(options, "--vault") !== undefined &&
-    optional(options, "--expected-vault") !== undefined &&
+    optional(options, "--root") !== undefined &&
     optional(options, "--project") !== undefined &&
     optional(options, "--expected-token") !== undefined;
   const mutatingRestore =
     command === "restore" &&
-    optional(options, "--vault") !== undefined &&
-    optional(options, "--expected-vault") !== undefined &&
+    optional(options, "--root") !== undefined &&
     optional(options, "--project") !== undefined &&
     optional(options, "--artifact-id") !== undefined &&
     optional(options, "--revision-token") !== undefined &&
     optional(options, "--expected-token") !== undefined;
   const result = mutatingRefresh
     ? refreshSpec({
-        vault: required(options, "--vault"),
-        expectedVault: required(options, "--expected-vault"),
+        root: required(options, "--root"),
         project: required(options, "--project"),
         specPath: required(options, "--spec"),
         expectedToken: required(options, "--expected-token"),
       })
     : mutatingRestore
       ? restoreArtifact({
-          vault: required(options, "--vault"),
-          expectedVault: required(options, "--expected-vault"),
+          root: required(options, "--root"),
           project: required(options, "--project"),
           artifactId: required(options, "--artifact-id"),
           revisionToken: required(options, "--revision-token"),

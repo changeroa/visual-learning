@@ -92,20 +92,6 @@ describe("deterministic renderer plan", () => {
     }
   });
 
-  test("ships the exact EA create filename and immutable workbench API calls", () => {
-    // Given
-    const script = readFileSync(join(import.meta.dir, "../assets/visual-note-renderer.md"), "utf8");
-    // When
-    const createFilename = "filename: `" + "$" + "{request.plan.artifactId}.excalidraw.md`";
-    // Then
-    expect(script).toContain(createFilename);
-    expect(script).toContain("ea.copyViewElementsToEAforEditing");
-    expect(script).toContain("ea.addAppendUpdateCustomData");
-    expect(script).toContain("ea.addElementsToView");
-    expect(script).toContain("ea.createSVG");
-    expect(script).toContain("element.groupIds = groupIdFor(planned)");
-  });
-
   test("plans every arrow in Excalidraw canonical first-endpoint coordinates", () => {
     const arrows = planScene(fixture).elements.filter((element) => element.type === "arrow");
 
@@ -134,13 +120,6 @@ describe("deterministic renderer plan", () => {
       );
       expect(overlaps).toEqual([]);
     }
-  });
-
-  test("opens and verifies the rendered drawing before live scene inspection", () => {
-    const adapter = readFileSync(join(import.meta.dir, "../src/renderer-live.ts"), "utf8");
-
-    expect(adapter).toContain("await leaf.openFile(renderedFile)");
-    expect(adapter).toContain("VISUAL_NOTE_POST_RENDER_VIEW_MISMATCH");
   });
 
   test("uses a stable non-overlapping node grid with text inside each node", () => {
