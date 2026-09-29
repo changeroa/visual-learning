@@ -60,7 +60,6 @@ describe("session-root series export", () => {
     expect(first.status).toBe("CREATED");
     expect(second.status).toBe("ALREADY_CURRENT");
     expect(first.outputRoot).toBe(output);
-    expect(existsSync(join(output, ".obsidian"))).toBe(false);
     expect(existsSync(join(output, "system-overview.svg"))).toBe(true);
     expect(existsSync(join(output, "system-overview.excalidraw.md"))).toBe(true);
     expect(existsSync(join(output, "specs/system-overview.json"))).toBe(true);

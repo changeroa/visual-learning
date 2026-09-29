@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validSpec } from "./schema.test";
@@ -23,7 +23,6 @@ describe("visual-note CLI", () => {
   test("help exposes the complete command surface", () => {
     // Given
     const commands = [
-      "preflight",
       "init",
       "bootstrap",
       "create",
@@ -34,7 +33,6 @@ describe("visual-note CLI", () => {
       "authoring-schema",
       "compile-authoring",
       "review-learning",
-      "open",
       "restore",
       "contract",
     ];
@@ -43,6 +41,9 @@ describe("visual-note CLI", () => {
     // Then
     expect(result.code).toBe(0);
     for (const command of commands) expect(result.stdout).toContain(command);
+    expect(result.stdout).not.toContain("preflight");
+    expect(result.stdout).not.toContain("\n  open ");
+    expect(result.stdout).not.toContain("--vault");
   });
 
   test("contract emits the machine-consumed sentinel and fixture hash", () => {
@@ -147,26 +148,15 @@ describe("visual-note CLI", () => {
 
   test("create rejects invalid input before writing and refuses a dirty target", () => {
     // Given
-    const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-vault-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-root-")));
     const directory = mkdtempSync(join(tmpdir(), "visual-note-spec-"));
     const spec = join(directory, "spec.json");
     writeFileSync(spec, `${JSON.stringify(validSpec)}\n`);
-    const args = [
-      "create",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
-      "--project",
-      "fixture",
-      "--spec",
-      spec,
-      "--json",
-    ];
+    const args = ["create", "--root", root, "--project", "fixture", "--spec", spec, "--json"];
     // When
     const first = run(args);
     const target = join(
-      vault,
+      root,
       "Engineering Atlas/10 Projects/fixture/_generated/specs/checkout-flow.json",
     );
     const before = readFileSync(target, "utf8");
@@ -179,15 +169,13 @@ describe("visual-note CLI", () => {
 
   test("init records commit null for a plain source without creating Git", () => {
     // Given
-    const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-init-vault-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-init-root-")));
     const source = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-init-source-")));
     // When
     const result = run([
       "init",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       "plain-source",
       "--source",
@@ -220,19 +208,17 @@ describe("visual-note CLI", () => {
     ]);
   });
 
-  test("a traversal project is rejected before the vault changes", () => {
+  test("a traversal project is rejected before the root changes", () => {
     // Given
-    const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-traversal-vault-")));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-traversal-root-")));
     const directory = mkdtempSync(join(tmpdir(), "visual-note-traversal-spec-"));
     const spec = join(directory, "spec.json");
     writeFileSync(spec, `${JSON.stringify(validSpec)}\n`);
     // When
     const result = run([
       "create",
-      "--vault",
-      vault,
-      "--expected-vault",
-      vault,
+      "--root",
+      root,
       "--project",
       "../../escape",
       "--spec",
@@ -241,7 +227,36 @@ describe("visual-note CLI", () => {
     ]);
     // Then
     expect(result.code).toBe(2);
-    expect(Bun.file(join(vault, "Engineering Atlas")).size).toBe(0);
+    expect(Bun.file(join(root, "Engineering Atlas")).size).toBe(0);
+  });
+
+  test("create rejects unavailable, relative, non-normalized, and symlinked roots", () => {
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-root-guard-")));
+    const realRoot = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-root-real-")));
+    const linkedRoot = join(directory, "linked-root");
+    const spec = join(directory, "spec.json");
+    writeFileSync(spec, `${JSON.stringify(validSpec)}\n`);
+    symlinkSync(realRoot, linkedRoot);
+
+    const runCreate = (root: string) =>
+      run(["create", "--root", root, "--project", "fixture", "--spec", spec, "--json"]);
+
+    expect(runCreate("relative").code).toBe(2);
+    expect(runCreate(`${realRoot}/../${realRoot.split("/").at(-1)}`).code).toBe(2);
+    expect(runCreate(join(directory, "missing")).code).toBe(2);
+    expect(runCreate(linkedRoot).code).toBe(2);
+    expect(runCreate(realRoot).code).toBe(0);
+  });
+
+  test("removed vault flag is rejected as an unknown option", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-removed-option-")));
+    const spec = join(root, "spec.json");
+    writeFileSync(spec, `${JSON.stringify(validSpec)}\n`);
+
+    const result = run(["create", "--vault", root, "--project", "fixture", "--spec", spec]);
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain("unknown option: --vault");
   });
 
   test("misleading success output still returns a nonzero exit", () => {
