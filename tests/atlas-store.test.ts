@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import {
   commitNote,
   commitScene,
@@ -19,7 +19,7 @@ import {
 import { InputError } from "../src/errors";
 import { type ExcalidrawScene, parseSceneMarkdown } from "../src/excalidraw-file";
 import { parseVisualNoteSpec } from "../src/schema";
-import { atlasSchema, migrationPath, SQLiteD1 } from "./support/d1-sqlite";
+import { SQLiteD1 } from "./support/d1-sqlite";
 
 const spec = parseVisualNoteSpec(
   JSON.parse(
@@ -83,28 +83,25 @@ describe("D1 adapter", () => {
     expect(await db.prepare("SELECT title FROM figures").first<string>("title")).toBe("updated");
   });
 
-  test.skipIf(!existsSync(migrationPath))(
-    "todo 2 migration has exactly the same tables and columns",
-    () => {
-      const expected = new SQLiteD1(atlasSchema);
-      const migrated = new SQLiteD1(readFileSync(migrationPath, "utf8"));
-      const columns = (connection: SQLiteD1) =>
-        connection.database
-          .query(`
-      SELECT m.name AS table_name, p.name AS column_name
-      FROM sqlite_master m JOIN pragma_table_info(m.name) p
-      WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%'
-      ORDER BY m.name, p.name
-    `)
-          .all();
-      try {
-        expect(columns(migrated)).toEqual(columns(expected));
-      } finally {
-        expected.close();
-        migrated.close();
-      }
-    },
-  );
+  test("the migration applies cleanly to an empty database", async () => {
+    const migrated = new SQLiteD1();
+    try {
+      expect(
+        (
+          await migrated
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .all()
+        ).results,
+      ).toEqual(
+        ["figures", "notes", "projects", "revisions", "verify_runs"].map((name) => ({ name })),
+      );
+      expect(
+        await migrated.prepare("PRAGMA integrity_check").first<string>("integrity_check"),
+      ).toBe("ok");
+    } finally {
+      migrated.close();
+    }
+  });
 });
 
 describe("atlas figures", () => {
@@ -318,6 +315,16 @@ describe("atlas figures", () => {
 });
 
 describe("notes and project lifecycle", () => {
+  test("projects require an ID even when the commit is unknown", async () => {
+    await expect(
+      db
+        .prepare("INSERT INTO projects VALUES (?, ?, ?, ?)")
+        .bind(null, "visual-learning", null, "2026-09-29")
+        .run(),
+    ).rejects.toThrow("NOT NULL constraint failed: projects.project_id");
+    expect(await listProjects(db)).toHaveLength(1);
+  });
+
   test("note CAS supports create, update, stale/create conflicts and races", async () => {
     const note = { project, artifact, nodeKey: "node", body: "first", expectedToken: null };
     expect(await commitNote(db, note)).toEqual({ outcome: "committed", token: "cas-1" });
@@ -377,13 +384,23 @@ describe("notes and project lifecycle", () => {
     };
     await replaceVerifyRuns(db, project, artifact, [run]);
     expect((await readFigure(db, project, artifact))?.verify).toEqual([run]);
+    for (const column of ["stdout", "stderr"]) {
+      await expect(db.prepare(`UPDATE verify_runs SET ${column}=NULL`).run()).rejects.toThrow(
+        `NOT NULL constraint failed: verify_runs.${column}`,
+      );
+    }
+    expect((await readFigure(db, project, artifact))?.verify).toEqual([run]);
     const skipped: VerifyRun = {
       ...run,
       index: 1,
+      semanticId: null,
       command: null,
       status: "not-run",
       reason: "no command",
       exitCode: null,
+      stdout: "",
+      stderr: "",
+      commit: null,
       ranAt: null,
     };
     await replaceVerifyRuns(db, project, artifact, [skipped]);
@@ -401,7 +418,21 @@ describe("notes and project lifecycle", () => {
       .prepare("INSERT INTO projects VALUES (?, ?, ?, ?)")
       .bind("other", "other", null, "now")
       .run();
-    await createFigure(db, { project: "other", spec, scene, deprecatedAnchors: [] });
+    const unversionedSpec = parseVisualNoteSpec({
+      ...spec,
+      source: { ...spec.source, commit: null },
+    });
+    await createFigure(db, {
+      project: "other",
+      spec: unversionedSpec,
+      scene,
+      deprecatedAnchors: [],
+    });
+    expect((await readProject(db, "other"))?.project.commit).toBeNull();
+    expect(
+      (await listProjects(db)).find((entry) => entry.projectId === "other")?.commit,
+    ).toBeNull();
+    expect((await readFigure(db, "other", artifact))?.spec.source.commit).toBeNull();
     expect(await deleteProject(db, project)).toBe(true);
     expect(await deleteProject(db, project)).toBe(false);
     for (const table of ["projects", "figures", "notes", "revisions", "verify_runs"]) {
