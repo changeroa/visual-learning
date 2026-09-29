@@ -1,0 +1,517 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "vl-02-export-series",
+  "kind": "workflow",
+  "revision": 1,
+  "title": "export-series의 스펙 폴더 시리즈 변환 순서",
+  "source": {
+    "root": "/Users/victor/projects/visual-learning",
+    "commit": "d6495cd8a82322d5c7220e8c7ea92a2dabe4128d"
+  },
+  "presentation": {
+    "layout": "components",
+    "direction": "left-to-right",
+    "columns": 2,
+    "frames": [
+      {
+        "id": "read",
+        "label": "읽고 검증",
+        "category": "security",
+        "order": 0
+      },
+      {
+        "id": "build",
+        "label": "임시 트리에 생성",
+        "category": "runtime",
+        "order": 1
+      },
+      {
+        "id": "publish",
+        "label": "게시 또는 거부",
+        "category": "data",
+        "order": 2
+      }
+    ]
+  },
+  "learning": {
+    "question": "export-series는 스펙을 어떻게 검증해 시리즈로 게시하는가?",
+    "answer": "`exportSeries`는 모든 스펙을 먼저 검증하고, 통과했을 때만 임시 트리에 노트·SVG·Excalidraw·`manifest.json`을 만들어 한 번에 게시한다. 검증은 `readSpecs`가 맡아 `parseVisualNoteSpec` 파싱, 파일명과 `artifactId` 일치, fact의 `resolveEvidence`, 정렬과 중복을 확인한다. 게시는 `publishProjectDirectory`가 맡아 새 대상은 `CREATED`, 같은 내용은 `ALREADY_CURRENT`로 끝내고, 내용이 다른 대상에는 `CollisionError`를 던진다.",
+    "route": [
+      {
+        "semanticId": "input-directories",
+        "explanation": "`realDirectory`가 입력 경로가 정규화된 절대 경로이고 실제 디렉터리인지 확인한다. 스펙을 읽기 전에 저장소와 스펙 폴더의 위치를 확정한다."
+      },
+      {
+        "semanticId": "validated-specs",
+        "explanation": "`readSpecs`가 스펙 JSON을 파싱하고 파일명 규칙과 fact 증거를 확인한다. `resolveEvidence`는 증거 파일의 존재, 지정된 줄 범위와 심볼 문자열을 검사한다."
+      },
+      {
+        "semanticId": "ordered-series",
+        "explanation": "종류를 `kindOrder` 순서로 정렬하고, 동률은 `artifactId` 문자열 순으로 정렬한다. 스펙 폴더가 비어 있거나 `artifactId`가 중복되면 거부한다."
+      },
+      {
+        "semanticId": "staging-project",
+        "explanation": "`sessionRoot` 아래에 임시 루트를 만들고 그 안의 `project` 폴더를 스테이징 대상으로 쓴다. 게시가 끝나면 `finally`에서 임시 루트를 제거한다."
+      },
+      {
+        "semanticId": "rendered-series",
+        "explanation": "`indexFor`와 `noteFor`가 시리즈 홈과 개별 노트를 구성한다. `learningHeader`, `learningIndexLines`, `learningSections`는 learning 필드가 있을 때 내용을 반영한다. 각 스펙의 미리보기는 `renderViewSvg`로, 편집 원본은 `sceneFromSpec`→`encodeSceneToMarkdown`으로 만든다."
+      },
+      {
+        "semanticId": "hashed-manifest",
+        "explanation": "`manifest`는 시리즈 메타데이터와 생성 파일 목록을 담고, 각 기존 파일 바이트의 `sha256`을 기록한다. 매니페스트 자체는 해시 목록을 만들 때 `files`에 포함되지 않는다."
+      },
+      {
+        "semanticId": "published-project",
+        "explanation": "`publishProjectDirectory`가 스테이징 디렉터리를 `docs/vl/projects/<project>`로 이동한다. 대상이 이미 있으면 파일 목록과 각 파일 해시를 비교해 동일 여부를 판별한다."
+      },
+      {
+        "semanticId": "collision-error",
+        "explanation": "대상이 심볼릭 링크이거나 디렉터리가 아니면, 또는 스테이징 트리와 내용이 다르면 `CollisionError`를 던진다. 기존 파일을 덮어쓰지 않고 충돌로 중단한다."
+      }
+    ],
+    "glossary": [
+      {
+        "term": "realDirectory",
+        "meaning": "정규 절대 비루트 경로와 실제 디렉터리 여부를 확인해 `realpath`를 반환하는 함수다."
+      },
+      {
+        "term": "readSpecs",
+        "meaning": "대상 JSON 스펙을 파싱·검증하고 종류와 `artifactId`를 기준으로 정렬하는 함수다."
+      },
+      {
+        "term": "resolveEvidence",
+        "meaning": "증거 경로의 실제 파일 존재 여부와 선택적 줄 범위·심볼 참조를 확인하는 함수다."
+      },
+      {
+        "term": "manifest",
+        "meaning": "프로젝트와 아티팩트 정보, 산출 파일별 SHA-256을 기록하는 JSON 데이터다."
+      },
+      {
+        "term": "publishProjectDirectory",
+        "meaning": "스테이징 디렉터리를 새 경로에 게시하거나 기존 디렉터리와 같은지 비교하는 함수다."
+      }
+    ],
+    "scope": {
+      "covers": [
+        "입력 디렉터리와 스펙 파일을 검증·정렬한다.",
+        "learning 노트, SVG, Excalidraw 원본을 스테이징한다.",
+        "파일별 SHA-256 매니페스트를 만들고 게시 결과를 분기한다."
+      ],
+      "omits": [
+        "각 kind의 전체 정렬 순서와 개별 스펙의 레이아웃·스타일 규칙은 다루지 않는다.",
+        "visual-note JSON 스키마의 모든 필드와 의미 검증 세부사항은 다루지 않는다.",
+        "scene 배치 계획과 SVG 내부 렌더러 구현은 다루지 않는다.",
+        "게시 과정의 파일시스템 원자성과 운영체제별 rename 동작은 다루지 않는다.",
+        "CLI 인자 파싱과 exportSeries 호출 전후의 상위 명령 처리는 다루지 않는다."
+      ]
+    },
+    "verify": [
+      {
+        "semanticId": "validated-specs",
+        "how": "`readSpecs`의 필터, 파싱, evidence 검사, 정렬, 중복 검사 코드를 확인한다.",
+        "command": "grep -n -E 'function readSpecs|parseVisualNoteSpec|resolveEvidence|kindOrder.get|artifactIds must be unique' src/session-export.ts"
+      },
+      {
+        "semanticId": "rendered-series",
+        "how": "`exportSeries`가 노트·SVG·Excalidraw 파일을 쓰는 호출을 확인한다.",
+        "command": "grep -n -E 'function noteFor|function indexFor|learningHeader|learningIndexLines|learningSections|renderViewSvg|sceneFromSpec|encodeSceneToMarkdown' src/session-export.ts"
+      },
+      {
+        "semanticId": "hashed-manifest",
+        "how": "매니페스트에 파일 경로와 `sha256`이 기록되는 코드를 확인한다.",
+        "command": "grep -n -A 14 'const manifest =' src/session-export.ts"
+      },
+      {
+        "semanticId": "published-project",
+        "how": "게시 성공, 동일 대상, 충돌 분기의 구현을 확인한다.",
+        "command": "grep -n -A 24 'export function publishProjectDirectory' src/project-publish.ts"
+      }
+    ],
+    "checks": [
+      {
+        "prompt": "fact claim은 어떤 경우에 증거 검증을 받는가?",
+        "answer": "`readSpecs`는 모든 node와 edge를 순회하지만 `claim.status === \"fact\"`일 때만 `resolveEvidence`를 호출한다. resolver는 참조 파일의 존재 여부와 입력된 줄 범위·심볼 문자열을 확인한다."
+      },
+      {
+        "prompt": "출력 대상이 이미 있으면 항상 `ALREADY_CURRENT`인가?",
+        "answer": "아니다. 대상이 일반 디렉터리이고 스테이징 디렉터리와 파일 목록 및 해시가 같을 때만 `ALREADY_CURRENT`다. 다른 형태의 대상이나 내용이 다르면 `CollisionError`다."
+      }
+    ],
+    "analogies": [
+      {
+        "analogy": "스펙 폴더를 검수한 뒤 임시 조립대에서 번호순 묶음을 만들고, 봉인 목록을 붙여 목적지에 인계하는 과정과 비슷하다.",
+        "holds": [
+          "검증을 통과한 스펙만 산출물 생성 단계로 넘어간다.",
+          "출력은 먼저 별도 임시 디렉터리에 구성된다.",
+          "매니페스트가 게시 파일의 해시 목록을 기록하고, 대상은 동일성 검사 후 처리된다."
+        ],
+        "breaks": [
+          "이 코드는 실제 물리 검사나 서명 봉인을 하지 않고 JSON 스키마·증거 참조·파일 해시를 검사한다.",
+          "대상 디렉터리가 있으면 해시 비교로 동일성을 확인하지만, 별도의 서명이나 출처 인증은 제공하지 않는다."
+        ]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "semanticId": "input-directories",
+      "label": "realDirectory\n경로 확인",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 39,
+          "lineEnd": 50,
+          "symbol": "function realDirectory"
+        }
+      ],
+      "visual": {
+        "category": "security",
+        "frameId": "read",
+        "shape": "rectangle",
+        "emphasis": "primary",
+        "lane": "upstream",
+        "order": 1
+      }
+    },
+    {
+      "semanticId": "validated-specs",
+      "label": "readSpecs\n스펙 검증",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 53,
+          "lineEnd": 78,
+          "symbol": "function readSpecs"
+        },
+        {
+          "path": "src/schema.ts",
+          "lineStart": 233,
+          "lineEnd": 235,
+          "symbol": "parseVisualNoteSpec"
+        },
+        {
+          "path": "src/evidence-resolver.ts",
+          "lineStart": 41,
+          "lineEnd": 59,
+          "symbol": "resolveEvidence"
+        }
+      ],
+      "visual": {
+        "category": "security",
+        "frameId": "read",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 2
+      }
+    },
+    {
+      "semanticId": "ordered-series",
+      "label": "kindOrder\n시리즈 순서",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 26,
+          "lineEnd": 37,
+          "symbol": "kindOrder"
+        },
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 69,
+          "lineEnd": 78,
+          "symbol": "artifactIds must be unique"
+        }
+      ],
+      "visual": {
+        "category": "security",
+        "frameId": "read",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 3
+      }
+    },
+    {
+      "semanticId": "staging-project",
+      "label": "stageProject\n임시 트리",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 194,
+          "lineEnd": 203,
+          "symbol": "mkdtempSync"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "build",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 4
+      }
+    },
+    {
+      "semanticId": "rendered-series",
+      "label": "renderViewSvg\n노트·그림 생성",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 124,
+          "lineEnd": 157,
+          "symbol": "function noteFor"
+        },
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 160,
+          "lineEnd": 178,
+          "symbol": "function indexFor"
+        },
+        {
+          "path": "src/learning-note.ts",
+          "lineStart": 40,
+          "lineEnd": 44,
+          "symbol": "learningHeader"
+        },
+        {
+          "path": "src/learning-note.ts",
+          "lineStart": 169,
+          "lineEnd": 182,
+          "symbol": "learningSections"
+        },
+        {
+          "path": "src/learning-note.ts",
+          "lineStart": 184,
+          "symbol": "learningIndexLines"
+        },
+        {
+          "path": "src/svg-gallery.ts",
+          "lineStart": 187,
+          "lineEnd": 199,
+          "symbol": "renderViewSvg"
+        },
+        {
+          "path": "src/scene-bootstrap.ts",
+          "lineStart": 22,
+          "lineEnd": 30,
+          "symbol": "sceneFromSpec"
+        },
+        {
+          "path": "src/excalidraw-file.ts",
+          "lineStart": 65,
+          "lineEnd": 67,
+          "symbol": "encodeSceneToMarkdown"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "build",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 5
+      }
+    },
+    {
+      "semanticId": "hashed-manifest",
+      "label": "manifest\n파일 해시 목록",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 216,
+          "lineEnd": 229,
+          "symbol": "const manifest ="
+        },
+        {
+          "path": "src/io.ts",
+          "lineStart": 19,
+          "lineEnd": 21,
+          "symbol": "export function sha256"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "build",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 6
+      }
+    },
+    {
+      "semanticId": "published-project",
+      "label": "publishProjectDirectory\n대상에 게시",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 230,
+          "lineEnd": 238,
+          "symbol": "publishProjectDirectory"
+        },
+        {
+          "path": "src/project-publish.ts",
+          "lineStart": 167,
+          "lineEnd": 190,
+          "symbol": "export function publishProjectDirectory"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "frameId": "publish",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "downstream",
+        "order": 7
+      }
+    },
+    {
+      "semanticId": "collision-error",
+      "label": "CollisionError\n불일치 대상 거부",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/project-publish.ts",
+          "lineStart": 180,
+          "lineEnd": 188,
+          "symbol": "new CollisionError"
+        },
+        {
+          "path": "src/errors.ts",
+          "lineStart": 11,
+          "lineEnd": 19,
+          "symbol": "export class CollisionError"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "frameId": "publish",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "exception",
+        "order": 8
+      }
+    }
+  ],
+  "edges": [
+    {
+      "semanticId": "check-directories",
+      "label": "정규 경로",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 191,
+          "lineEnd": 194,
+          "symbol": "const sessionRoot = realDirectory"
+        }
+      ],
+      "from": "input-directories",
+      "to": "validated-specs",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "parse-and-check",
+      "label": "readSpecs",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 69,
+          "lineEnd": 78,
+          "symbol": "kindOrder.get"
+        }
+      ],
+      "from": "validated-specs",
+      "to": "ordered-series",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "make-staging",
+      "label": "임시 폴더를 만든다",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 194,
+          "lineEnd": 202,
+          "symbol": "const stageProject"
+        }
+      ],
+      "from": "ordered-series",
+      "to": "staging-project",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "write-outputs",
+      "label": "index와 산출물 생성",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 204,
+          "lineEnd": 215,
+          "symbol": "write(\"index.md\""
+        }
+      ],
+      "from": "staging-project",
+      "to": "rendered-series",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "hash-files",
+      "label": "sha256을 기록한다",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 216,
+          "lineEnd": 229,
+          "symbol": "sha256: sha256"
+        }
+      ],
+      "from": "rendered-series",
+      "to": "hashed-manifest",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "publish-target",
+      "label": "게시를 시도한다",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 230,
+          "lineEnd": 238,
+          "symbol": "publishProjectDirectory(stageProject"
+        }
+      ],
+      "from": "hashed-manifest",
+      "to": "published-project",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "collision-branch",
+      "label": "불일치면 거부한다",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/project-publish.ts",
+          "lineStart": 180,
+          "lineEnd": 190,
+          "symbol": "sameDirectory(stageProject, targetProject)"
+        }
+      ],
+      "from": "published-project",
+      "to": "collision-error",
+      "relation": "state-transition"
+    }
+  ]
+}
