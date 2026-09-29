@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -289,8 +290,105 @@ describe("remote client publish", () => {
     const result = await runCli(publishArgs(atlasCopy(), remote.url), childEnv(validHome()));
     // Then
     expect(result.code).toBe(4);
-    expect(result.stderr).toContain("403: forbidden: rejected secret [redacted]");
+    expect(result.stderr).toContain("403: forbidden: rejected secret ***");
     expect(result.stderr).not.toContain(secret);
+  });
+
+  test("a success response echoing the secret as artifactId exits non-zero without printing it", async () => {
+    // Given: the independent verifier's repro, with environment credentials
+    const remote = stub(() =>
+      Response.json({
+        results: [
+          {
+            artifactId: secret,
+            outcome: "created",
+            token: "cas-1",
+            deprecatedAnchors: [],
+            orphanedNotes: [],
+          },
+        ],
+      }),
+    );
+    const env = childEnv(temporary("visual-learning-home-"), {
+      VISUAL_ATLAS_CLIENT_ID: "fake-client",
+      VISUAL_ATLAS_CLIENT_SECRET: secret,
+    });
+    // When
+    const result = await runCli(publishArgs(atlasCopy(), remote.url), env);
+    // Then
+    expect(result.code).toBe(4);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("visual-note: remote returned an invalid publish response\n");
+    expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
+  });
+
+  test("rejects unknown, duplicated, or missing artifacts and malformed fields without echoing the body", async () => {
+    // Given
+    const root = atlasCopy();
+    const env = childEnv(validHome());
+    const valid = (artifactId: string) => ({
+      artifactId,
+      outcome: "created",
+      token: "cas-1",
+      deprecatedAnchors: [],
+      orphanedNotes: [],
+    });
+    const first = valid("vl-01-architecture");
+    const second = valid("vl-02-export-series");
+    const cases: Record<string, unknown[]> = {
+      unknownArtifact: [first, second, valid("vl-99-unknown")],
+      duplicatedArtifact: [first, second, first],
+      missingArtifact: [first],
+      badToken: [first, { ...second, token: "etag-1" }],
+      badOutcome: [first, { ...second, outcome: "deleted" }],
+      badAnchor: [first, { ...second, deprecatedAnchors: ["../escape"] }],
+      badOrphan: [first, { ...second, orphanedNotes: [42] }],
+    };
+    for (const [name, results] of Object.entries(cases)) {
+      const remote = stub(() => Response.json({ results, echo: `body-marker-${name}` }));
+      // When
+      const result = await runCli(publishArgs(root, remote.url), env);
+      // Then
+      expect({ name, code: result.code, stdout: result.stdout, stderr: result.stderr }).toEqual({
+        name,
+        code: 4,
+        stdout: "",
+        stderr: "visual-note: remote returned an invalid publish response\n",
+      });
+    }
+  });
+
+  test("printed server fields pass through the credential redactor", async () => {
+    // Given: id-shaped fields that happen to equal the secret and the client id's secret part
+    const remote = stub((request) => {
+      const payload = JSON.parse(request.body) as { figures: Figure[] };
+      return Response.json({
+        results: payload.figures.map((figure) => ({
+          artifactId: figure.spec.artifactId,
+          outcome: "refreshed",
+          token: "cas-2",
+          deprecatedAnchors: [secret],
+          orphanedNotes: ["test-client"],
+        })),
+      });
+    });
+    // When
+    const text = await runCli(publishArgs(atlasCopy(), remote.url), childEnv(validHome()));
+    const json = await runCli(
+      [...publishArgs(atlasCopy(), remote.url), "--json"],
+      childEnv(validHome()),
+    );
+    // Then
+    expect(text.code).toBe(0);
+    expect(text.stdout).toContain(
+      "refreshed vl-01-architecture cas-2 deprecatedAnchors=*** orphanedNotes=***\n",
+    );
+    expect(json.code).toBe(0);
+    expect(json.stdout).toContain('"deprecatedAnchors":["***"]');
+    for (const output of [text, json]) {
+      expect(`${output.stdout}${output.stderr}`).not.toContain(secret);
+      expect(`${output.stdout}${output.stderr}`).not.toContain("test-client");
+    }
   });
 
   test("--repo-root records verify output with repo paths scrubbed and blocks other leaks", async () => {
@@ -381,20 +479,32 @@ describe("remote client pull", () => {
     expect(remote.requests[0]?.headers.get("cf-access-client-secret")).toBe(secret);
   });
 
-  test("rejects an export whose artifact id is not a safe slug", async () => {
+  test("rejects an export with a traversal, non-slug, or duplicated artifact id and writes nothing", async () => {
     // Given
-    const remote = stub(() =>
-      Response.json({ figures: [{ ...(exportFigures("x")[0] as object), artifactId: "../x" }] }),
-    );
-    const out = temporary("visual-learning-pull-");
-    // When
-    const result = await runCli(
-      ["pull", "--project", "visual-learning", "--out", out, "--remote", remote.url],
-      childEnv(validHome()),
-    );
-    // Then
-    expect(result.code).toBe(4);
-    expect(result.stderr).toContain("remote returned an unexpected export response");
-    expect(existsSync(join(out, "visual-learning"))).toBe(false);
+    const [figure] = exportFigures("x") as object[];
+    const cases: Record<string, unknown[]> = {
+      parentTraversal: [{ ...figure, artifactId: "../x" }],
+      nestedTraversal: [{ ...figure, artifactId: "vl-01/../../escape" }],
+      notSlug: [{ ...figure, artifactId: secret.toUpperCase() }],
+      duplicated: [figure, figure],
+    };
+    const env = childEnv(validHome());
+    for (const [name, figures] of Object.entries(cases)) {
+      const remote = stub(() => Response.json({ figures }));
+      const out = temporary("visual-learning-pull-");
+      // When
+      const result = await runCli(
+        ["pull", "--project", "visual-learning", "--out", out, "--remote", remote.url],
+        env,
+      );
+      // Then
+      expect({ name, code: result.code, stdout: result.stdout, stderr: result.stderr }).toEqual({
+        name,
+        code: 4,
+        stdout: "",
+        stderr: "visual-note: remote returned an invalid export response\n",
+      });
+      expect(readdirSync(out)).toEqual([]);
+    }
   });
 });
