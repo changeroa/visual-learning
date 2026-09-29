@@ -229,6 +229,10 @@ Report the artifact ID, kind, old/new token, evidence paths, status/confidence c
 
 If neither exists, stop and ask the user; never invent, echo, or store the secret yourself. `--remote` overrides the default `https://atlas.iyendev.com` and must use `https` unless the host is `127.0.0.1` or `localhost`. `VISUAL_ATLAS_DEV_JWT` is honored only for a local remote. Hosting setup is documented in `README.md` ("Hosting").
 
+### Limits
+
+The atlas runs on Workers Free (10 ms CPU per request) by owner decision. Measured on 2026-09-29: `POST /api/publish` takes 14-41 ms per figure; `GET` requests take 1-6 ms. Publish and save requests can fail with Cloudflare error 1102. Recovery: re-run `visual-note publish`, which is idempotent (each figure reports `created`, `refreshed`, or `conflict`); a failed browser save keeps the draft, so save again. Workers Paid ($5/month) removes the limit; do not upgrade without the owner's explicit okay.
+
 ## Ownership, density, and recovery
 
 Generated elements require complete `customData`: `owner=agent`, artifact ID, semantic ID, revision, and stable generated element ID. Partial or ambiguous ownership is a hard rejection. If a removed agent element is referenced by human content, retain its same ID/geometry as `deprecatedAnchor=true`; do not rewrite the human reference.
