@@ -392,13 +392,11 @@ const rendererModules = [
   "src/renderer-plan.ts",
   "src/refresh-elements.ts",
   "src/refresh-scene.ts",
-  "src/renderer-live.ts",
   "src/scene-bootstrap.ts",
   "src/scene-links.ts",
   "src/svg-gallery.ts",
 ];
 const refreshSceneSource = readFileSync(join(packageRoot, "src", "refresh-scene.ts"), "utf8");
-const rendererLiveSource = readFileSync(join(packageRoot, "src", "renderer-live.ts"), "utf8");
 const rendererDecomposition = {
   modules: rendererModules,
   modulesPresent: rendererModules.every((path) => existsSync(join(packageRoot, path))),
@@ -409,7 +407,6 @@ const rendererDecomposition = {
   ),
   buildsOwnershipReferenceGraph:
     refreshSceneSource.includes("ReferenceGraph") && refreshSceneSource.includes("ownershipOf"),
-  usesAutomateAppendUpdateCustomData: rendererLiveSource.includes("addAppendUpdateCustomData"),
   preservationTestsPresent:
     existsSync(join(packageRoot, "tests", "preservation.test.ts")) &&
     existsSync(join(packageRoot, "tests", "cross-ownership-bindings.test.ts")),
@@ -418,7 +415,6 @@ requireTrue(
   rendererDecomposition.modulesPresent &&
     rendererDecomposition.largestModuleLines <= maxSourceLines &&
     rendererDecomposition.buildsOwnershipReferenceGraph &&
-    rendererDecomposition.usesAutomateAppendUpdateCustomData &&
     rendererDecomposition.preservationTestsPresent,
   "renderer must stay decomposed with ownership-aware selective refresh",
 );

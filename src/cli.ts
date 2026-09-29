@@ -6,10 +6,17 @@ import { runSpecCommand } from "./cli-spec";
 import { CollisionError, ConflictError, InputError, RuntimeError } from "./errors";
 import { compileInteractiveAuthoringDocument } from "./interactive-authoring-compiler";
 import { interactiveAuthoringJsonSchema } from "./interactive-authoring-schema";
-import { readJson, sha256, writeResult } from "./io";
+import { formatResult, readJson, sha256, writeResult } from "./io";
 import { reviewLearningSpec } from "./learning-review";
 import { bootstrapSample, createSpec, initializeProject, validateSpec } from "./operations";
-import { defaultRemote, publish, pull } from "./remote-client";
+import {
+  type Credentials,
+  credentialRedactor,
+  defaultRemote,
+  loadCredentials,
+  publish,
+  pull,
+} from "./remote-client";
 import { parseVisualNoteSpec } from "./schema";
 import { exportSeries } from "./session-export";
 
@@ -58,20 +65,36 @@ function takeRepeated(argv: readonly string[], flag: string): [string[], string[
   return [values, rest];
 }
 
+// publish and pull install this once credentials load; every later stdout/stderr write,
+// including error reports, passes through it.
+let redact: ((text: string) => string) | null = null;
+
+function scrub(text: string): string {
+  return redact === null ? text : redact(text);
+}
+
+function remoteCredentials(): Credentials {
+  const credentials = loadCredentials(process.env);
+  redact = credentialRedactor(credentials);
+  return credentials;
+}
+
 async function runPublish(argv: readonly string[]): Promise<void> {
   const [artifacts, rest] = takeRepeated(argv, "--artifact");
   const options = parseOptions(rest, new Set(["--root", "--project", "--repo-root", "--remote"]));
   const repoRoot = optional(options, "--repo-root");
+  const credentials = remoteCredentials();
   const result = await publish({
     root: required(options, "--root"),
     project: required(options, "--project"),
     remote: optional(options, "--remote") ?? defaultRemote,
     env: process.env,
+    credentials,
     ...(artifacts.length === 0 ? {} : { artifacts }),
     ...(repoRoot === undefined ? {} : { repoRoot }),
   });
   if (options.json) {
-    writeResult(result, true);
+    process.stdout.write(scrub(formatResult(result, true)));
   } else {
     for (const figure of result.results) {
       const extras = [
@@ -83,7 +106,7 @@ async function runPublish(argv: readonly string[]): Promise<void> {
           : [`orphanedNotes=${figure.orphanedNotes.join(",")}`]),
       ];
       process.stdout.write(
-        `${[figure.outcome, figure.artifactId, figure.token, ...extras].join(" ")}\n`,
+        scrub(`${[figure.outcome, figure.artifactId, figure.token, ...extras].join(" ")}\n`),
       );
     }
   }
@@ -102,15 +125,15 @@ async function run(command: string, argv: readonly string[]): Promise<void> {
       return;
     case "pull": {
       const options = parseOptions(argv, new Set(["--project", "--out", "--remote"]));
-      writeResult(
-        await pull({
-          project: required(options, "--project"),
-          out: required(options, "--out"),
-          remote: optional(options, "--remote") ?? defaultRemote,
-          env: process.env,
-        }),
-        options.json,
-      );
+      const credentials = remoteCredentials();
+      const result = await pull({
+        project: required(options, "--project"),
+        out: required(options, "--out"),
+        remote: optional(options, "--remote") ?? defaultRemote,
+        env: process.env,
+        credentials,
+      });
+      process.stdout.write(scrub(formatResult(result, options.json)));
       return;
     }
     case "init": {
@@ -239,11 +262,11 @@ try {
   await main();
 } catch (error) {
   if (error instanceof CollisionError || error instanceof ConflictError) {
-    process.stderr.write(`visual-note: ${error.message}\n`);
+    process.stderr.write(scrub(`visual-note: ${error.message}\n`));
     process.exit(3);
   }
   if (error instanceof RuntimeError) {
-    process.stderr.write(`visual-note: ${error.message}\n`);
+    process.stderr.write(scrub(`visual-note: ${error.message}\n`));
     process.exit(4);
   }
   if (
@@ -252,8 +275,14 @@ try {
     error instanceof SyntaxError ||
     error instanceof TypeError
   ) {
-    process.stderr.write(`visual-note: ${error.message}\n`);
+    process.stderr.write(scrub(`visual-note: ${error.message}\n`));
     process.exit(2);
+  }
+  if (redact !== null) {
+    // An uncaught error would print unredacted; report it through the redactor instead.
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    process.stderr.write(scrub(`visual-note: unexpected error: ${detail}\n`));
+    process.exit(1);
   }
   throw error;
 }

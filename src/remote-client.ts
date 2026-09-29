@@ -1,5 +1,5 @@
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { z } from "zod";
 import { CollisionError, InputError, RuntimeError } from "./errors";
 import { type ExcalidrawScene, encodeSceneToMarkdown, type JsonObject } from "./excalidraw-file";
@@ -15,38 +15,64 @@ export const defaultRemote = "https://atlas.iyendev.com";
 export type Environment = Readonly<Record<string, string | undefined>>;
 export type Credentials = { readonly clientId: string; readonly clientSecret: string };
 
+// Same rule as the spec schema's artifactId and semanticId.
 const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Excalidraw element ids (e.g. "cB-U56FQ") and note keys (e.g. "_figure"); a superset of slug.
+const elementId = /^[A-Za-z0-9_-]{1,128}$/;
 const leakPattern = /\/Users\/|\/home\/|\/private\/var\//;
 const localHosts = new Set(["127.0.0.1", "localhost"]);
 const requestTimeoutMs = 60_000;
+const invalidPublishResponse = "remote returned an invalid publish response";
+const invalidExportResponse = "remote returned an invalid export response";
 const credentialsSchema = z.object({
   clientId: z.string().min(1),
   clientSecret: z.string().min(1),
 });
-const publishResponseSchema = z.object({
-  results: z.array(
-    z.object({
-      artifactId: z.string(),
-      outcome: z.enum(["created", "refreshed", "conflict"]),
-      token: z.string(),
-      deprecatedAnchors: z.array(z.string()),
-      orphanedNotes: z.array(z.string()),
-    }),
-  ),
+const publishResultSchema = z.object({
+  artifactId: z.string().regex(slug),
+  outcome: z.enum(["created", "refreshed", "conflict"]),
+  token: z.string().regex(/^cas-\d+$/),
+  deprecatedAnchors: z.array(z.string().regex(elementId)),
+  orphanedNotes: z.array(z.string().regex(elementId)),
 });
-const exportResponseSchema = z.object({
-  figures: z.array(
-    z.object({
-      artifactId: z.string().regex(slug),
-      spec: z.record(z.string(), z.unknown()),
-      scene: z.looseObject({ elements: z.array(z.unknown()) }),
-      notes: z.array(z.unknown()),
-      verify: z.array(z.unknown()),
-    }),
-  ),
-});
+const exportResponseSchema = z
+  .object({
+    figures: z.array(
+      z.object({
+        artifactId: z.string().regex(slug),
+        spec: z.record(z.string(), z.unknown()),
+        scene: z.looseObject({ elements: z.array(z.unknown()) }),
+        notes: z.array(z.unknown()),
+        verify: z.array(z.unknown()),
+      }),
+    ),
+  })
+  .refine(
+    ({ figures }) => new Set(figures.map((figure) => figure.artifactId)).size === figures.length,
+  );
 
-export type PublishResult = z.infer<typeof publishResponseSchema>["results"][number];
+export type PublishResult = z.infer<typeof publishResultSchema>;
+
+// Results must answer every sent artifact exactly once and name nothing else.
+function publishResponseSchema(sent: readonly string[]) {
+  return z.object({ results: z.array(publishResultSchema) }).refine(({ results }) => {
+    const answered = new Set(results.map((result) => result.artifactId));
+    return (
+      results.length === sent.length &&
+      answered.size === results.length &&
+      sent.every((artifactId) => answered.has(artifactId))
+    );
+  });
+}
+
+// Masks the client secret and, for "<part>.access" client ids, the id's secret part.
+export function credentialRedactor(credentials: Credentials): (text: string) => string {
+  const idPart = /^(.+)\.access$/.exec(credentials.clientId)?.[1];
+  const secrets = [credentials.clientSecret, ...(idPart === undefined ? [] : [idPart])].sort(
+    (left, right) => right.length - left.length,
+  );
+  return (text) => secrets.reduce((current, secret) => current.split(secret).join("***"), text);
+}
 
 export function parseRemote(remote: string): URL {
   let url: URL;
@@ -120,10 +146,6 @@ export function accessHeaders(
   return headers;
 }
 
-function redact(message: string, credentials: Credentials): string {
-  return message.split(credentials.clientSecret).join("[redacted]").slice(0, 500);
-}
-
 function remoteErrorDetail(text: string): string {
   try {
     const body: unknown = JSON.parse(text);
@@ -184,10 +206,9 @@ async function request(
   const text = await response.text();
   if (!response.ok) {
     throw new RuntimeError(
-      redact(
+      credentialRedactor(credentials)(
         `remote ${method} ${path} failed with ${response.status}: ${remoteErrorDetail(text)}`,
-        credentials,
-      ),
+      ).slice(0, 500),
     );
   }
   try {
@@ -300,9 +321,10 @@ export async function publish(input: {
   readonly repoRoot?: string;
   readonly remote: string;
   readonly env: Environment;
+  readonly credentials?: Credentials;
 }): Promise<{ readonly projectId: string; readonly results: PublishResult[] }> {
   const remote = parseRemote(input.remote);
-  const credentials = loadCredentials(input.env);
+  const credentials = input.credentials ?? loadCredentials(input.env);
   const payload = await attachVerify(
     buildPublishPayload({
       root: input.root,
@@ -315,10 +337,12 @@ export async function publish(input: {
       ...(input.repoRoot === undefined ? {} : { repoRoot: input.repoRoot }),
     },
   );
-  const response = publishResponseSchema.safeParse(
+  const sent = payload.figures.map((figure) => String(figure.spec.artifactId));
+  const response = publishResponseSchema(sent).safeParse(
     await request(remote, "/api/publish", credentials, input.env, JSON.stringify(payload)),
   );
-  if (!response.success) throw new RuntimeError("remote returned an unexpected publish response");
+  // The body is server-controlled, so neither it nor the zod issues reach the message.
+  if (!response.success) throw new RuntimeError(invalidPublishResponse);
   return { projectId: payload.projectId, results: response.data.results };
 }
 
@@ -341,6 +365,7 @@ export async function pull(input: {
   readonly out: string;
   readonly remote: string;
   readonly env: Environment;
+  readonly credentials?: Credentials;
 }): Promise<{
   readonly project: string;
   readonly figures: number;
@@ -350,18 +375,16 @@ export async function pull(input: {
   if (!slug.test(input.project)) throw new InputError(`invalid project slug: ${input.project}`);
   const out = ensureRealDirectory(input.out, "--out");
   const remote = parseRemote(input.remote);
-  const credentials = loadCredentials(input.env);
+  const credentials = input.credentials ?? loadCredentials(input.env);
   const response = exportResponseSchema.safeParse(
     await request(remote, `/api/projects/${input.project}/export`, credentials, input.env),
   );
-  if (!response.success) throw new RuntimeError("remote returned an unexpected export response");
+  if (!response.success) throw new RuntimeError(invalidExportResponse);
   const project = input.project;
-  const seen = new Set<string>();
+  const projectRoot = resolve(out, project);
   const files: PulledFile[] = [];
   for (const figure of response.data.figures) {
     const id = figure.artifactId;
-    if (seen.has(id)) throw new RuntimeError(`remote export repeats artifact ${id}`);
-    seen.add(id);
     files.push(
       {
         path: `${project}/${id}.excalidraw.md`,
@@ -371,6 +394,10 @@ export async function pull(input: {
       { path: `${project}/notes/${id}.json`, bytes: jsonBytes(figure.notes) },
       { path: `${project}/verify/${id}.json`, bytes: jsonBytes(figure.verify) },
     );
+  }
+  // Defense in depth behind the slug rule: nothing lands outside <out>/<project>/.
+  if (files.some((file) => !resolve(out, file.path).startsWith(`${projectRoot}${sep}`))) {
+    throw new RuntimeError(invalidExportResponse);
   }
   for (const folder of ["specs", "notes", "verify"])
     safeMakeDirectories(out, `${project}/${folder}`);
@@ -386,5 +413,5 @@ export async function pull(input: {
   for (const file of files) {
     if (written.includes(file.path)) safeCreateFile(out, file.path, file.bytes);
   }
-  return { project, figures: seen.size, written, unchanged };
+  return { project, figures: response.data.figures.length, written, unchanged };
 }

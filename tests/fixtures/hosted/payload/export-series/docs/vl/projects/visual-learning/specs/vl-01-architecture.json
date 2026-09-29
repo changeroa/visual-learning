@@ -94,7 +94,7 @@
         "export-series의 게시 위치인 `<session-root>/docs/vl/projects/<project>`를 다룬다."
       ],
       "omits": [
-        "`create` 명령의 대안 경로인 `createRenderedSpec`에서 `renderer-live`와 Obsidian Script Engine으로 실제 vault에 렌더링하는 흐름은 다루지 않는다.",
+        "`create` 명령의 대안 경로인 `createRenderedSpec`에서 `renderer-live`와 the former desktop note app의 Script Engine으로 실제 vault에 렌더링하는 흐름은 다루지 않는다.",
         "`renderer-live`의 플러그인·런타임 receipt 검증, vault 확인, renderer 실행 결과 검증은 다루지 않는다.",
         "`bundle-transaction`의 JSON·PNG 쌍 원자 게시와 저널 기반 복구 흐름은 다루지 않는다.",
         "`safe-path`를 사용하는 `init` 및 `createSpec`의 vault 내 파일 작성 경로는 다루지 않는다.",
@@ -143,7 +143,7 @@
         ],
         "breaks": [
           "이 흐름은 항상 성공하는 단순한 라인이 아니다. 기존 목표가 있으면 동일성을 비교하거나 충돌을 판정한다.",
-          "`export-series`의 게시 대상은 Obsidian vault가 아니라 전달된 session root 아래다."
+          "`export-series`의 게시 대상은 the former desktop note app의 vault가 아니라 전달된 session root 아래다."
         ]
       }
     ]

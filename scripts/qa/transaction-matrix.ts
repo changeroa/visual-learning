@@ -35,14 +35,7 @@ function main(): void {
       "--inject-edit",
       "--tamper-after-state",
       "--child-boundary",
-      "--vault",
-      "--obsidian-app",
-      "--obsidian-cli",
-      "--user-data-dir",
-      "--expected-vault",
-      "--provision-plugin-from",
-      "--verify-plugin-sha",
-      "--launch-app-before-cli",
+      "--root",
       "--verify-base-path",
       "--per-artifact-rw-lock",
       "--reader-recovery-gate",
@@ -59,8 +52,6 @@ function main(): void {
       "--expect",
     ]),
     new Set([
-      "--verify-plugin-sha",
-      "--launch-app-before-cli",
       "--verify-base-path",
       "--per-artifact-rw-lock",
       "--reader-recovery-gate",
@@ -74,7 +65,7 @@ function main(): void {
     ]),
   );
   const childBoundary = options.values.get("--child-boundary") as Boundary | undefined;
-  if (childBoundary !== undefined) childMode(childBoundary, resolve(required(options, "--vault")));
+  if (childBoundary !== undefined) childMode(childBoundary, resolve(required(options, "--root")));
 
   const out = resolve(required(options, "--out"));
   const killBoundaries = csv(required(options, "--kill-boundaries")) as Boundary[];
@@ -90,21 +81,21 @@ function main(): void {
     tamperCases.map((name) => [name, tamperResult(name, out)]),
   );
 
-  const humanVault = fixtureRoot(out, "human-save");
-  const humanSeed = seedTransaction(humanVault, "human-text-container-to-agent");
-  humanSave(humanVault, humanSeed.project, "matrix-human-save");
-  const humanOpened = openTransaction(humanVault, humanSeed.project, specV1.artifactId);
+  const humanRoot = fixtureRoot(out, "human-save");
+  const humanSeed = seedTransaction(humanRoot, "human-text-container-to-agent");
+  humanSave(humanRoot, humanSeed.project, "matrix-human-save");
+  const humanOpened = openTransaction(humanRoot, humanSeed.project, specV1.artifactId);
 
-  const abaVault = fixtureRoot(out, "aba");
-  const abaSeed = seedTransaction(abaVault, "human-arrow-to-agent");
+  const abaRoot = fixtureRoot(out, "aba");
+  const abaSeed = seedTransaction(abaRoot, "human-arrow-to-agent");
   const refreshed = refreshTransaction({
-    root: abaVault,
+    root: abaRoot,
     project: abaSeed.project,
     spec: specV2,
     expectedToken: abaSeed.state.committedToken,
   });
   const restored = restoreTransaction({
-    root: abaVault,
+    root: abaRoot,
     project: abaSeed.project,
     artifactId: specV1.artifactId,
     revisionToken: "cas-0",
@@ -113,7 +104,7 @@ function main(): void {
   let stale = "UNEXPECTED-SUCCESS";
   try {
     refreshTransaction({
-      root: abaVault,
+      root: abaRoot,
       project: abaSeed.project,
       spec: specV2,
       expectedToken: abaSeed.state.committedToken,
@@ -122,12 +113,12 @@ function main(): void {
     stale = error instanceof Error ? error.message : "conflict";
   }
 
-  const burnVault = fixtureRoot(out, "burn");
-  const burnSeed = seedTransaction(burnVault, "human-arrow-to-agent");
+  const burnRoot = fixtureRoot(out, "burn");
+  const burnSeed = seedTransaction(burnRoot, "human-arrow-to-agent");
   try {
     refreshTransaction(
       {
-        root: burnVault,
+        root: burnRoot,
         project: burnSeed.project,
         spec: specV2,
         expectedToken: burnSeed.state.committedToken,
@@ -140,18 +131,18 @@ function main(): void {
     );
   } catch {}
   const burned = existsSync(
-    join(transactionPaths(burnVault, burnSeed.project, specV1.artifactId).burnedRoot, "cas-1.json"),
+    join(transactionPaths(burnRoot, burnSeed.project, specV1.artifactId).burnedRoot, "cas-1.json"),
   );
   const afterBurn = refreshTransaction({
-    root: burnVault,
+    root: burnRoot,
     project: burnSeed.project,
     spec: specV2,
-    expectedToken: transactionState(burnVault, burnSeed.project).committedToken,
+    expectedToken: transactionState(burnRoot, burnSeed.project).committedToken,
   });
 
-  const readerVault = fixtureRoot(out, "reader");
-  const readerSeed = seedTransaction(readerVault, "human-arrow-to-agent");
-  const readerState = openTransaction(readerVault, readerSeed.project, specV1.artifactId);
+  const readerRoot = fixtureRoot(out, "reader");
+  const readerSeed = seedTransaction(readerRoot, "human-arrow-to-agent");
+  const readerState = openTransaction(readerRoot, readerSeed.project, specV1.artifactId);
 
   const receipt = {
     schemaVersion: 1,

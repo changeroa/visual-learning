@@ -131,6 +131,34 @@ describe("routing, identity, and headers", () => {
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
   });
 
+  test("static-asset _headers apply the API security headers to every path", async () => {
+    // Workers Static Assets answer non-API paths without the Worker, so _headers must match it.
+    const rules = new Map<string, Map<string, string>>();
+    let current: Map<string, string> | undefined;
+    const source = readFileSync(new URL("../hosted/web/_headers", import.meta.url), "utf8");
+    for (const line of source.split("\n")) {
+      if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
+      if (!/^\s/.test(line)) {
+        current = new Map();
+        rules.set(line.trim(), current);
+        continue;
+      }
+      const colon = line.indexOf(":");
+      if (current === undefined || colon < 0) throw new Error(`bad _headers line: ${line}`);
+      current.set(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
+    }
+    const api = await call("GET", "/api/projects");
+    const names = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy"];
+    const expected = Object.fromEntries(names.map((name) => [name, api.headers.get(name)]));
+    expect(expected).toEqual({
+      "Content-Security-Policy": CSP,
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+    });
+    const staticRule: Record<string, string | null> = Object.fromEntries(rules.get("/*") ?? []);
+    expect(staticRule).toEqual(expected);
+  });
+
   test("a missing JWT is 401 JSON with security headers", async () => {
     const response = await call("GET", "/api/projects");
     expect(response.status).toBe(401);
@@ -279,6 +307,30 @@ describe("POST /api/publish", () => {
     expect(response.status).toBe(400);
     expect(await errorCode(response)).toBe("invalid_input");
     expect(await db.prepare("SELECT COUNT(*) AS n FROM projects").first<number>("n")).toBe(0);
+  });
+
+  test("a dangling scene in any figure is 400 and leaves no project row", async () => {
+    const broken = {
+      elements: [{ id: "broken", type: "rectangle", boundElements: [{ id: "missing" }] }],
+    };
+    const response = await call("POST", "/api/publish", {
+      token: serviceToken,
+      body: {
+        projectId: "broken-only",
+        repoName: "visual-learning",
+        commit: "abc1234",
+        figures: [
+          { spec, scene, verify: [] },
+          { spec, scene: broken, verify: [] },
+        ],
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(await errorCode(response)).toBe("invalid_input");
+    expect(await db.prepare("SELECT COUNT(*) AS n FROM projects").first<number>("n")).toBe(0);
+    expect(await db.prepare("SELECT COUNT(*) AS n FROM figures").first<number>("n")).toBe(0);
+    const list = await call("GET", "/api/projects", { token: userToken });
+    expect(await list.json()).toEqual({ projects: [] });
   });
 
   test("missing fields are 400", async () => {
