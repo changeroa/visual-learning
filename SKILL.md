@@ -231,7 +231,7 @@ If neither exists, stop and ask the user; never invent, echo, or store the secre
 
 ### Limits
 
-The atlas runs on Workers Free (10 ms CPU per request) by owner decision. Measured on 2026-09-29: `POST /api/publish` takes 14-41 ms per figure; `GET` requests take 1-6 ms. Publish and save requests can fail with Cloudflare error 1102. Recovery: re-run `visual-note publish`, which is idempotent (each figure reports `created`, `refreshed`, or `conflict`); a failed browser save keeps the draft, so save again. Workers Paid ($5/month) removes the limit; do not upgrade without the owner's explicit okay.
+The atlas runs on Workers Free (10 ms CPU per request) by owner decision. Measured on 2026-09-29: `POST /api/publish` takes 14-41 ms per figure; `GET` requests take 1-6 ms. Publish and save requests can fail with Cloudflare error 1102. Recovery: re-run `visual-note publish`; it is safe but not idempotent, since each run refreshes every named figure again with a new cas token and revision, so a retry re-sends figures that had already succeeded. Human edits are preserved by the merge; a browser tab holding an older token gets a conflict on its next save and can use "최신본에 내 그림 합치기". A failed browser save keeps the draft, so save again. Workers Paid ($5/month) removes the limit; do not upgrade without the owner's explicit okay.
 
 ## Ownership, density, and recovery
 

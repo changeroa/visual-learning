@@ -158,7 +158,7 @@ The atlas stays on Workers Free, which caps each request at 10 ms of CPU time; t
 
 Publish and save requests can therefore fail with Cloudflare error 1102 (Worker exceeded resource limits). To recover:
 
-- **Publish:** re-run `visual-note publish`. It is idempotent: each figure reports its own outcome (`created`, `refreshed`, or `conflict`), so a re-run is safe and completes the figures that failed.
+- **Publish:** re-run `visual-note publish`. It is safe but not idempotent: each run refreshes every named figure again, creating a new cas token and a new revision, so a retry re-sends figures that had already succeeded, not just the ones that failed. Human edits are preserved by the merge; a browser tab still holding an older token gets a conflict on its next save and can use "최신본에 내 그림 합치기" to merge in its local changes.
 - **Save:** a failed save keeps the browser draft, so save again.
 
 Workers Paid ($5/month) removes the 10 ms limit.
