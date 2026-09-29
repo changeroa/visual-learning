@@ -3,6 +3,7 @@
 import {
   CaptureUpdateAction,
   Excalidraw,
+  getCommonBounds,
   hashElementsVersion,
   restoreElements,
   viewportCoordsToSceneCoords,
@@ -52,6 +53,68 @@ function toExcalidraw(elements: readonly SceneElement[]): ExcalidrawElement[] {
 function semanticIdOf(element: ExcalidrawElement): string | null {
   const id: unknown = element.customData?.["semanticId"];
   return typeof id === "string" ? id : null;
+}
+
+// IS-2: node labels must paint at >= 12 CSS px. Excalidraw draws text at fontSize x zoom CSS px,
+// so the initial zoom never drops below 12 / (smallest node-label fontSize); pan covers the rest.
+const minLabelPx = 12;
+const viewportPad = 24;
+// Keeps the figure's first row clear of Excalidraw's top-left menu island (desktop layout).
+const menuReserve = 64;
+const minZoom = 0.1;
+const maxZoom = 30;
+type ZoomValue = AppState["zoom"]["value"];
+type Viewport = { zoom: { value: ZoomValue }; scrollX: number; scrollY: number };
+
+function readableZoom(elements: readonly ExcalidrawElement[]): number {
+  const texts = elements.flatMap((element) => (element.type === "text" ? [element] : []));
+  const labels = texts.filter((text) => text.customData?.["elementRole"] === "node-label");
+  const sizes = (labels.length > 0 ? labels : texts).map((text) => text.fontSize);
+  return sizes.length === 0 ? 0 : minLabelPx / Math.min(...sizes);
+}
+
+// Fit to the pane width, never below the readable zoom and never above 100%; center what fits,
+// otherwise start at the figure's top-left so the reader pans right/down.
+function initialViewport(
+  elements: readonly ExcalidrawElement[],
+  width: number,
+  height: number,
+  compact: boolean,
+): Viewport {
+  const [minX, minY, maxX, maxY] = getCommonBounds(elements);
+  const contentWidth = Math.max(maxX - minX, 1);
+  const contentHeight = Math.max(maxY - minY, 1);
+  const fitWidth = (width - 2 * viewportPad) / contentWidth;
+  const zoom = Math.min(maxZoom, Math.max(readableZoom(elements), Math.min(fitWidth, 1), minZoom));
+  const top = compact ? viewportPad : menuReserve;
+  const usableHeight = height - top - viewportPad;
+  const scrollX =
+    contentWidth * zoom <= width - 2 * viewportPad
+      ? width / 2 / zoom - (minX + maxX) / 2
+      : viewportPad / zoom - minX;
+  const scrollY =
+    contentHeight * zoom <= usableHeight
+      ? (top + usableHeight / 2) / zoom - (minY + maxY) / 2
+      : top / zoom - minY;
+  return { zoom: { value: zoom as ZoomValue }, scrollX, scrollY };
+}
+
+// Zooms around the canvas center, like Excalidraw's own +/- buttons.
+function zoomedViewport(appState: AppState, factor: number): Viewport {
+  const current = appState.zoom.value;
+  const next = Math.min(maxZoom, Math.max(minZoom, current * factor));
+  const centerX = appState.width / 2 / current - appState.scrollX;
+  const centerY = appState.height / 2 / current - appState.scrollY;
+  return {
+    zoom: { value: next as ZoomValue },
+    scrollX: appState.width / 2 / next - centerX,
+    scrollY: appState.height / 2 / next - centerY,
+  };
+}
+
+// Matches the styles.css breakpoint that stacks the panes and hides Excalidraw's view-mode chrome.
+function isCompact(): boolean {
+  return window.matchMedia("(max-width: 900px)").matches;
 }
 
 export function FigureView({ project, artifact }: { project: string; artifact: string }) {
@@ -126,6 +189,8 @@ function Workspace({
   );
   const pendingRef = useRef(pendingDraft !== null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [viewportReady, setViewportReady] = useState(false);
+  const [zoomPercent, setZoomPercent] = useState(100);
   const [tab, setTab] = useState<Tab>("learn");
   const [notes, setNotes] = useState<Note[]>(figure.notes);
   const claimIds = useMemo(
@@ -174,7 +239,8 @@ function Workspace({
     (elements: readonly OrderedExcalidrawElement[], appState: AppState) => {
       const excalidraw = apiRef.current;
       const host = hostRef.current;
-      // Fit once Excalidraw has measured the real pane size (it starts from the window size).
+      // Place the figure once Excalidraw has measured the real pane size (it starts from the
+      // window size).
       if (
         excalidraw !== null &&
         host !== null &&
@@ -184,10 +250,13 @@ function Workspace({
         Math.abs(appState.height - host.clientHeight) < 2
       ) {
         fittedRef.current = true;
-        queueMicrotask(() =>
-          excalidraw.scrollToContent(undefined, { fitToViewport: true, viewportZoomFactor: 0.95 }),
-        );
+        const viewport = initialViewport(elements, appState.width, appState.height, isCompact());
+        queueMicrotask(() => {
+          excalidraw.updateScene({ appState: viewport, captureUpdate: CaptureUpdateAction.NEVER });
+          setViewportReady(true);
+        });
       }
+      setZoomPercent(Math.round(appState.zoom.value * 100));
       const selectedIds = appState.selectedElementIds;
       const hit = elements.find((element) => {
         const id = semanticIdOf(element);
@@ -336,6 +405,25 @@ function Workspace({
     excalidraw.scrollToContent(targets, { fitToContent: false, animate: true });
   };
 
+  const zoomBy = (factor: number) => {
+    const excalidraw = apiRef.current;
+    if (excalidraw === null) return;
+    excalidraw.updateScene({
+      appState: zoomedViewport(excalidraw.getAppState(), factor),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  };
+
+  const resetViewport = () => {
+    const excalidraw = apiRef.current;
+    if (excalidraw === null) return;
+    const { width, height } = excalidraw.getAppState();
+    excalidraw.updateScene({
+      appState: initialViewport(excalidraw.getSceneElements(), width, height, isCompact()),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  };
+
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     pointerStart.current = { x: event.clientX, y: event.clientY };
   };
@@ -404,6 +492,37 @@ function Workspace({
           >
             {message.length > 0 ? message : dirty ? "저장되지 않은 변경" : `최신 (${token})`}
           </span>
+          <fieldset className="zoom-group" aria-label="확대/축소" data-testid="zoom-group">
+            <button
+              type="button"
+              className="secondary"
+              aria-label="축소"
+              onClick={() => zoomBy(1 / 1.25)}
+              data-testid="zoom-out"
+            >
+              −
+            </button>
+            <span className="zoom-level" data-testid="zoom-level">
+              {zoomPercent}%
+            </span>
+            <button
+              type="button"
+              className="secondary"
+              aria-label="확대"
+              onClick={() => zoomBy(1.25)}
+              data-testid="zoom-in"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={resetViewport}
+              data-testid="zoom-reset"
+            >
+              처음 보기
+            </button>
+          </fieldset>
         </div>
         {pendingDraft !== null && (
           <div className="banner" role="alert" data-testid="draft-banner">
@@ -435,8 +554,9 @@ function Workspace({
           </div>
         )}
         <div
-          className="excalidraw-host"
+          className={editing ? "excalidraw-host" : "excalidraw-host viewing"}
           data-testid="excalidraw-host"
+          data-initial-viewport={viewportReady ? "applied" : "pending"}
           ref={hostRef}
           onPointerDownCapture={onPointerDown}
           onPointerUpCapture={onPointerUp}

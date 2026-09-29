@@ -44,7 +44,7 @@ function ProjectList() {
       <h1>프로젝트</h1>
       {data.projects.length === 0 ? (
         <p className="muted">
-          아직 발행된 프로젝트가 없습니다. `visual-note publish`로 올려 주세요.
+          아직 발행된 프로젝트가 없습니다. <code>visual-note publish</code>로 올려 주세요.
         </p>
       ) : (
         <ul className="card-list" data-testid="project-list">

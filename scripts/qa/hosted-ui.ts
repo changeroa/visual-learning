@@ -7,6 +7,10 @@
 // the CF_Authorization cookie on that origin, and publish/delete use VISUAL_ATLAS_CLIENT_ID +
 // VISUAL_ATLAS_CLIENT_SECRET (or VISUAL_ATLAS_DEV_JWT for a localhost Worker). All work happens in
 // a throwaway project that is deleted at the end. Exit code 0 only when every assertion passes.
+//
+// Against `bun run dev:hosted` (env.local), scripts/qa/hosted-dev-auth.ts mints both test JWTs:
+//   eval "$(bun scripts/qa/hosted-dev-auth.ts)"
+//   bun scripts/qa/hosted-ui.ts --base-url http://127.0.0.1:8787 --auth-cookie "$CF_AUTHORIZATION"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -92,30 +96,110 @@ const editorReady = `() => {
     document.querySelector('[data-testid="save-status"]') !== null;
 }`;
 
-// Waits until the whole scene's bounding box lies inside the visible canvas (fit to content).
-function waitForFit(
-  view: Bun.WebView,
-  label: string,
-): Promise<{ box: number[]; canvas: number[] }> {
-  return waitFor(
+type ViewportReport = {
+  zoom: number;
+  labelFont: number;
+  labelPx: number;
+  labels: number;
+  visibleLabels: number;
+  widthVisible: boolean;
+  figure: number[];
+  canvas: number[];
+  innerHeight: number;
+  controls: number;
+  overlaps: string[];
+};
+
+// Readable-size method (IS-2): Excalidraw paints text into a <canvas> at fontSize x zoom CSS px
+// (devicePixelRatio only scales the backing store), so there is no DOM text to measure. The rendered
+// label size is appState.zoom.value x the smallest agent node-label fontSize in the scene.
+// Overlap method: the figure's on-screen bounds clipped to the canvas (what the reader can see of
+// the figure) are intersected with every visible control rectangle inside the Excalidraw host.
+async function viewportReport(view: Bun.WebView, label: string): Promise<ViewportReport> {
+  await waitFor(
     view,
-    `${label}: figure fits the canvas`,
-    `() => {
-      const editor = window.visualAtlasEditor;
-      const state = editor.getAppState();
-      const elements = editor.getSceneElements();
-      const zoom = state.zoom.value;
-      const xs = elements.flatMap((e) =>
-        e.points ? e.points.map((p) => e.x + p[0]) : [e.x, e.x + e.width]);
-      const ys = elements.flatMap((e) =>
-        e.points ? e.points.map((p) => e.y + p[1]) : [e.y, e.y + e.height]);
-      const box = [
-        (Math.min(...xs) + state.scrollX) * zoom, (Math.min(...ys) + state.scrollY) * zoom,
-        (Math.max(...xs) + state.scrollX) * zoom, (Math.max(...ys) + state.scrollY) * zoom,
-      ];
-      const inside = box[0] >= -1 && box[1] >= -1 && box[2] <= state.width + 1 &&
-        box[3] <= state.height + 1;
-      return inside ? { box: box.map(Math.round), canvas: [state.width, state.height] } : null;
+    `${label}: initial viewport applied`,
+    `() => document.querySelector('[data-testid="excalidraw-host"]')?.dataset.initialViewport ===
+      "applied"`,
+  );
+  return view.evaluate<ViewportReport>(`(() => {
+    const editor = window.visualAtlasEditor;
+    const state = editor.getAppState();
+    const zoom = state.zoom.value;
+    const hostNode = document.querySelector('[data-testid="excalidraw-host"]');
+    const host = hostNode.getBoundingClientRect();
+    const elements = editor.getSceneElements();
+    const screenX = (x) => host.left + (x + state.scrollX) * zoom;
+    const screenY = (y) => host.top + (y + state.scrollY) * zoom;
+    const labels = elements.filter((e) => e.type === "text" &&
+      e.customData?.elementRole === "node-label");
+    const labelFont = Math.min(...labels.map((e) => e.fontSize));
+    const visibleLabels = labels.filter((e) => screenX(e.x) >= host.left &&
+      screenY(e.y) >= host.top && screenX(e.x + e.width) <= host.right &&
+      screenY(e.y + e.height) <= host.bottom).length;
+    const xs = elements.flatMap((e) =>
+      e.points ? e.points.map((p) => e.x + p[0]) : [e.x, e.x + e.width]);
+    const ys = elements.flatMap((e) =>
+      e.points ? e.points.map((p) => e.y + p[1]) : [e.y, e.y + e.height]);
+    const left = screenX(Math.min(...xs));
+    const right = screenX(Math.max(...xs));
+    const figure = [
+      Math.max(left, host.left), Math.max(screenY(Math.min(...ys)), host.top),
+      Math.min(right, host.right), Math.min(screenY(Math.max(...ys)), host.bottom),
+    ];
+    const controls = [...hostNode.querySelectorAll(
+      "button, [role=button], input, select, a, label, .Island, .App-toolbar, .App-bottom-bar",
+    )].filter((node) => {
+      const r = node.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 &&
+        node.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    });
+    const overlaps = controls.filter((node) => {
+      const r = node.getBoundingClientRect();
+      return r.left < figure[2] && r.right > figure[0] && r.top < figure[3] && r.bottom > figure[1];
+    }).map((node) => (node.getAttribute("aria-label") || node.className.toString()).slice(0, 60));
+    return {
+      zoom, labelFont, labelPx: zoom * labelFont, labels: labels.length, visibleLabels,
+      widthVisible: left >= host.left - 1 && right <= host.right + 1,
+      figure: figure.map(Math.round), canvas: [Math.round(host.width), Math.round(host.height)],
+      innerHeight: window.innerHeight, controls: controls.length, overlaps,
+    };
+  })()`);
+}
+
+function checkReadableLabels(width: number, report: ViewportReport): void {
+  check(
+    `${width}: node label text renders at >= 12 CSS px (zoom x smallest node-label fontSize)`,
+    report.labels > 0 && report.labelPx >= 12 - 1e-6,
+    `${report.zoom.toFixed(3)} x ${report.labelFont}px = ${report.labelPx.toFixed(1)}px`,
+  );
+  check(
+    `${width}: node labels are on screen in the initial viewport`,
+    report.visibleLabels > 0,
+    `${report.visibleLabels}/${report.labels} labels fully visible`,
+  );
+}
+
+const inlineCodePattern = /`([^`\n]+)`/g;
+
+function withoutBackticks(text: string): string {
+  return text.replace(inlineCodePattern, "$1");
+}
+
+// Every `span` in the spec answer must render as <code>, and no literal backtick may remain.
+async function checkInlineCode(view: Bun.WebView, label: string, answer: string): Promise<void> {
+  const expected = [...answer.matchAll(inlineCodePattern)].map((match) => match[1] ?? "");
+  const rendered = await view.evaluate<{ text: string; codes: string[] }>(`(() => {
+    const panel = document.querySelector('[data-testid="learning-panel"]');
+    return { text: panel.textContent, codes: [...panel.querySelectorAll("code")]
+      .map((node) => node.textContent) };
+  })()`);
+  const missing = expected.filter((code) => !rendered.codes.includes(code));
+  check(
+    `${label}: 학습 panel renders inline code spans as <code> with no literal backticks`,
+    expected.length > 0 && missing.length === 0 && !rendered.text.includes("`"),
+    `${expected.length} spans in answer, ${rendered.codes.length} <code> in panel${
+      missing.length > 0 ? `, missing ${missing.join(", ")}` : ""
     }`,
   );
 }
@@ -283,7 +367,7 @@ async function main(): Promise<void> {
         notes: { nodeKey: string; body: string; orphaned: boolean; token: string }[];
       };
 
-    if (authCookie !== undefined && stub !== null) {
+    if (authCookie !== undefined) {
       const anonymous = await fetch(`${baseUrl}/api/projects`);
       check("auth: request without CF_Authorization is rejected", anonymous.status === 401);
     }
@@ -291,7 +375,11 @@ async function main(): Promise<void> {
     // Seed a throwaway project through the publish route.
     await call("DELETE", `/api/projects/${qaProject}`, true);
     const { spec, scene } = seedSpecAndScene();
-    const parsedSpec = spec as { learning?: { question: string }; source: { commit: string } };
+    const parsedSpec = spec as {
+      learning?: { question: string; answer: string };
+      source: { commit: string };
+    };
+    const answer = parsedSpec.learning?.answer ?? "";
     const published = await call("POST", "/api/publish", true, {
       projectId: qaProject,
       repoName: "visual-learning",
@@ -335,8 +423,13 @@ async function main(): Promise<void> {
     await shot(tabA, "02-grid-1440");
     await tabA.click(`a[href="${figureRoute}"]`);
     await waitFor(tabA, "editor ready", editorReady);
-    const fitDesktop = await waitForFit(tabA, "1440");
-    check("1440: figure fits to content on load", true, JSON.stringify(fitDesktop));
+    const desktopView = await viewportReport(tabA, "1440");
+    checkReadableLabels(1440, desktopView);
+    check(
+      "1440: initial viewport fits the figure width (zoom capped at 100%)",
+      desktopView.widthVisible,
+      JSON.stringify({ zoom: desktopView.zoom, figure: desktopView.figure }),
+    );
     const layout = await tabA.evaluate<{ pane: number; canvas: number }>(`(() => {
       const pane = document.querySelector('[data-testid="canvas-pane"]').getBoundingClientRect();
       const canvas = document.querySelector('[data-testid="excalidraw-host"] canvas');
@@ -350,7 +443,11 @@ async function main(): Promise<void> {
     const question = await tabA.evaluate<string>(
       `document.querySelector('[data-testid="learning-question"]').textContent`,
     );
-    check("학습 tab shows the spec question", question === parsedSpec.learning?.question);
+    check(
+      "학습 tab shows the spec question",
+      question === withoutBackticks(parsedSpec.learning?.question ?? ""),
+    );
+    await checkInlineCode(tabA, "1440", answer);
     const viewState = await tabA.evaluate<{ viewMode: boolean; assetPath: string }>(
       `({ viewMode: window.visualAtlasEditor.getAppState().viewModeEnabled,
           assetPath: window.EXCALIDRAW_ASSET_PATH })`,
@@ -634,6 +731,14 @@ async function main(): Promise<void> {
         evidenceText.includes("실행됨") &&
         evidenceText.includes("실행 안 함"),
     );
+    // Recorded stdout/stderr stay verbatim in <pre>; only spec prose is rendered.
+    const evidenceProse = await tabA.evaluate<string>(`[...document.querySelectorAll(
+      '[data-testid="evidence-panel"] .claim > div, [data-testid="evidence-panel"] .verify > p'
+    )].map((node) => node.textContent).join("\\n")`);
+    check(
+      "근거 tab prose has no literal backticks",
+      evidenceProse.length > 0 && !evidenceProse.includes("`"),
+    );
     await shot(tabA, "11-evidence-1440");
 
     // Mobile width.
@@ -649,8 +754,43 @@ async function main(): Promise<void> {
     await waitFor(mobile, "mobile editor", editorReady);
     const innerWidth = await mobile.evaluate<number>("window.innerWidth");
     check("390: viewport really is 390 CSS px wide", innerWidth === 390, `${innerWidth}`);
-    const fitMobile = await waitForFit(mobile, "390");
-    check("390: figure fits to content on load", true, JSON.stringify(fitMobile));
+    const mobileView = await viewportReport(mobile, "390");
+    checkReadableLabels(390, mobileView);
+    check(
+      "390: drawing canvas is >= 60vh tall",
+      mobileView.canvas[1] !== undefined && mobileView.canvas[1] >= 0.6 * mobileView.innerHeight,
+      `${mobileView.canvas[1]}/${mobileView.innerHeight}`,
+    );
+    check(
+      "390: no Excalidraw control overlaps the visible figure bounds",
+      mobileView.overlaps.length === 0,
+      `${mobileView.controls} visible controls in canvas, figure ${JSON.stringify(
+        mobileView.figure,
+      )}${mobileView.overlaps.length > 0 ? `, overlapping: ${mobileView.overlaps.join(" | ")}` : ""}`,
+    );
+    const zoomBar = await mobile.evaluate<{ visible: boolean; outside: boolean }>(`(() => {
+      const bar = document.querySelector('[data-testid="zoom-group"]');
+      const host = document.querySelector('[data-testid="excalidraw-host"]').getBoundingClientRect();
+      const r = bar.getBoundingClientRect();
+      return { visible: bar.checkVisibility() && r.width > 0,
+        outside: r.bottom <= host.top || r.top >= host.bottom };
+    })()`);
+    await mobile.click('[data-testid="zoom-in"]');
+    const zoomedIn = await mobile.evaluate<number>(
+      "window.visualAtlasEditor.getAppState().zoom.value",
+    );
+    await mobile.click('[data-testid="zoom-reset"]');
+    const zoomedBack = await mobile.evaluate<number>(
+      "window.visualAtlasEditor.getAppState().zoom.value",
+    );
+    check(
+      "390: toolbar zoom controls sit outside the canvas and change the zoom",
+      zoomBar.visible &&
+        zoomBar.outside &&
+        Math.abs(zoomedIn - mobileView.zoom * 1.25) < 1e-6 &&
+        Math.abs(zoomedBack - mobileView.zoom) < 1e-6,
+      `${mobileView.zoom} -> ${zoomedIn} -> ${zoomedBack}`,
+    );
     const mobileLayout = await mobile.evaluate<{ pane: number; canvas: number }>(`(() => {
       const pane = document.querySelector('[data-testid="canvas-pane"]').getBoundingClientRect();
       const canvas = document.querySelector('[data-testid="excalidraw-host"] canvas');
@@ -663,6 +803,7 @@ async function main(): Promise<void> {
     );
     await shot(mobile, "13-figure-390");
     await mobile.scrollTo('[data-testid="learning-panel"]', { block: "start" });
+    await checkInlineCode(mobile, "390", answer);
     await shot(mobile, "14-learning-390");
 
     // Cleanup of the throwaway project.

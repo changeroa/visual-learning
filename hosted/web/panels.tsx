@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Claim, Figure, Spec, VerifyEntry } from "./api";
-import { evidenceText, firstLine, shortTime, statusText } from "./ui";
+import { evidenceText, firstLine, Prose, shortTime, statusText } from "./ui";
 
 function claimLabel(spec: Spec, semanticId: string): string {
   const claim = [...spec.nodes, ...spec.edges].find((item) => item.semanticId === semanticId);
@@ -11,9 +11,13 @@ function Reveal({ prompt, answer }: { prompt: string; answer: string }) {
   const [open, setOpen] = useState(false);
   return (
     <li className="check">
-      <p>{prompt}</p>
+      <p>
+        <Prose text={prompt} />
+      </p>
       {open ? (
-        <p className="check-answer">{answer}</p>
+        <p className="check-answer">
+          <Prose text={answer} />
+        </p>
       ) : (
         <button type="button" className="secondary" onClick={() => setOpen(true)}>
           답 보기
@@ -34,16 +38,20 @@ export function LearningPanel({
 }) {
   const learning = spec.learning;
   if (learning === undefined)
-    return <p className="muted">이 그림에는 학습 레이어(`spec.learning`)가 없습니다.</p>;
+    return (
+      <p className="muted">
+        이 그림에는 학습 레이어(<code>spec.learning</code>)가 없습니다.
+      </p>
+    );
   return (
     <div className="learning" data-testid="learning-panel">
       <section>
         <h3>이 그림이 답하는 질문</h3>
         <p className="question" data-testid="learning-question">
-          {learning.question}
+          <Prose text={learning.question} />
         </p>
         <p>
-          <strong>답:</strong> {learning.answer}
+          <strong>답:</strong> <Prose text={learning.answer} />
         </p>
       </section>
       {learning.route.length > 0 && (
@@ -62,7 +70,9 @@ export function LearningPanel({
                   <strong>{claimLabel(spec, step.semanticId)}</strong>{" "}
                   <code>{step.semanticId}</code>
                 </button>
-                <p>{step.explanation}</p>
+                <p>
+                  <Prose text={step.explanation} />
+                </p>
               </li>
             ))}
           </ol>
@@ -77,7 +87,9 @@ export function LearningPanel({
                 <dt>
                   <code>{entry.term}</code>
                 </dt>
-                <dd>{entry.meaning}</dd>
+                <dd>
+                  <Prose text={entry.meaning} />
+                </dd>
               </div>
             ))}
           </dl>
@@ -92,7 +104,9 @@ export function LearningPanel({
                 <h4>다루는 것</h4>
                 <ul>
                   {learning.scope.covers.map((item) => (
-                    <li key={item}>{item}</li>
+                    <li key={item}>
+                      <Prose text={item} />
+                    </li>
                   ))}
                 </ul>
               </>
@@ -102,7 +116,9 @@ export function LearningPanel({
                 <h4>다루지 않는 것 (여기에 없다고 존재하지 않는다는 뜻은 아닙니다)</h4>
                 <ul>
                   {learning.scope.omits.map((item) => (
-                    <li key={item}>{item}</li>
+                    <li key={item}>
+                      <Prose text={item} />
+                    </li>
                   ))}
                 </ul>
               </>
@@ -124,17 +140,23 @@ export function LearningPanel({
           <h3>비유</h3>
           {learning.analogies.map((analogy) => (
             <div key={analogy.analogy} className="analogy">
-              <p>{analogy.analogy}</p>
+              <p>
+                <Prose text={analogy.analogy} />
+              </p>
               <h4>들어맞는 점</h4>
               <ul>
                 {analogy.holds.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item}>
+                    <Prose text={item} />
+                  </li>
                 ))}
               </ul>
               <h4>어긋나는 점</h4>
               <ul>
                 {analogy.breaks.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item}>
+                    <Prose text={item} />
+                  </li>
                 ))}
               </ul>
             </div>
@@ -149,7 +171,10 @@ function ClaimRow({ claim, selected }: { claim: Claim; selected: boolean }) {
   return (
     <li className={`claim${selected ? " active" : ""}`} data-semantic-id={claim.semanticId}>
       <div>
-        <strong>{firstLine(claim.label)}</strong> <code>{claim.semanticId}</code>
+        <strong>
+          <Prose text={firstLine(claim.label)} />
+        </strong>{" "}
+        <code>{claim.semanticId}</code>
       </div>
       <div className={`status status-${claim.status}`}>
         {statusText[claim.status]} (<code>{claim.status}</code>)
@@ -176,7 +201,9 @@ function VerifyRow({ entry, spec }: { entry: VerifyEntry; spec: Spec }) {
         <strong>{entry.semanticId === null ? "-" : claimLabel(spec, entry.semanticId)}</strong>{" "}
         {entry.semanticId !== null && <code>{entry.semanticId}</code>}
       </div>
-      <p>{entry.how}</p>
+      <p>
+        <Prose text={entry.how} />
+      </p>
       {entry.command !== null && (
         <pre className="command">
           <code>{entry.command}</code>
@@ -187,7 +214,12 @@ function VerifyRow({ entry, spec }: { entry: VerifyEntry; spec: Spec }) {
           <p className="status status-fact">
             실행됨 (<code>ran</code>) · 종료 코드 <code>{entry.exitCode ?? "없음"}</code> · 커밋{" "}
             <code>{entry.commit?.slice(0, 7) ?? "-"}</code> · 시각 {shortTime(entry.ranAt)}
-            {entry.reason !== null && <> · 사유 {entry.reason}</>}
+            {entry.reason !== null && (
+              <>
+                {" "}
+                · 사유 <Prose text={entry.reason} />
+              </>
+            )}
           </p>
           <details>
             <summary>stdout ({entry.stdout.length}자)</summary>
@@ -200,7 +232,7 @@ function VerifyRow({ entry, spec }: { entry: VerifyEntry; spec: Spec }) {
         </>
       ) : (
         <p className="status status-question">
-          실행 안 함 (<code>not-run</code>) · 사유: {entry.reason ?? "-"}
+          실행 안 함 (<code>not-run</code>) · 사유: <Prose text={entry.reason ?? "-"} />
         </p>
       )}
     </li>

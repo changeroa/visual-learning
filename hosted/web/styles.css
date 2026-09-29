@@ -205,6 +205,26 @@ button:disabled {
   font-size: 0.88em;
 }
 
+/* Our zoom controls live in the toolbar, outside the canvas; shown where Excalidraw's are hidden. */
+.zoom-group {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.zoom-group button {
+  padding: 2px 10px;
+}
+
+.zoom-level {
+  min-width: 3.2em;
+  text-align: center;
+  font-size: 0.88em;
+}
+
 .banner {
   display: flex;
   flex-wrap: wrap;
@@ -426,9 +446,25 @@ button:disabled {
   }
 
   .canvas-pane {
-    height: 62vh;
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+
+  /* The drawing surface itself gets >= 60vh; the toolbar and banners stack above it. */
+  .excalidraw-host {
+    flex: none;
+    height: 64vh;
+  }
+
+  .zoom-group {
+    display: flex;
+  }
+
+  /* In view mode Excalidraw's floating menus would sit on top of the figure; the toolbar's zoom
+     group replaces them. Edit mode keeps Excalidraw's full UI for drawing. */
+  .excalidraw-host.viewing .layer-ui__wrapper,
+  .excalidraw-host.viewing .App-bottom-bar {
+    display: none;
   }
 
   .side-pane {

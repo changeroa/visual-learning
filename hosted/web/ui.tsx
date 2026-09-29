@@ -1,6 +1,18 @@
 import type { MouseEvent, ReactNode } from "react";
 import type { ClaimStatus, Evidence } from "./api";
+import { splitInlineCode } from "./inline-code";
 import { navigate } from "./router";
+
+// Renders spec prose with `code spans` as <code>; React escapes every text node.
+export function Prose({ text }: { text: string }) {
+  return (
+    <>
+      {splitInlineCode(text).map((segment) =>
+        segment.code ? <code key={segment.start}>{segment.text}</code> : segment.text,
+      )}
+    </>
+  );
+}
 
 export function shortTime(iso: string | null): string {
   if (iso === null || iso.length === 0) return "-";
