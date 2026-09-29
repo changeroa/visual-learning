@@ -9,16 +9,16 @@ import { writeCommitted, writeState } from "./transaction-state";
 import type { TransactionResult } from "./transaction-types";
 
 export function bootstrapTransaction(input: {
-  readonly vault: string;
+  readonly root: string;
   readonly project: string;
   readonly spec: VisualNoteSpec;
   readonly scene: ExcalidrawScene;
 }): TransactionResult {
-  const paths = transactionPaths(input.vault, input.project, input.spec.artifactId);
+  const paths = transactionPaths(input.root, input.project, input.spec.artifactId);
   mkdirSync(paths.historyRoot, { recursive: true });
   const token = "cas-0";
   const workingPath = paths.workingPath(token);
-  const note = noteForWorking(input.vault, paths, input.spec, workingPath, []);
+  const note = noteForWorking(input.root, paths, input.spec, workingPath, []);
   const svg = svgBytes(input.spec, input.scene);
   writeAtomicText(workingPath, encodeSceneToMarkdown(input.scene));
   const state = {

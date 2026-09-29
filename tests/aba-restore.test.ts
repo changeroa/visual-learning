@@ -17,13 +17,13 @@ describe("ABA restore protection", () => {
   test("stale A conflicts after A->B->restore-A-as-C", () => {
     const { project, state } = seedTransaction(root, "human-arrow-to-agent");
     const b = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: state.committedToken,
     });
     const c = restoreTransaction({
-      vault: root,
+      root,
       project,
       artifactId: specV1.artifactId,
       revisionToken: "cas-0",
@@ -33,7 +33,7 @@ describe("ABA restore protection", () => {
     expect(c.committedToken).toBe("cas-2");
     expect(() =>
       refreshTransaction({
-        vault: root,
+        root,
         project,
         spec: specV2,
         expectedToken: state.committedToken,

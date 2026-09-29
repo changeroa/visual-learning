@@ -36,7 +36,7 @@ export function fixtureRoot(out: string, label: string): string {
 export function childMode(boundary: Boundary, vault: string): never {
   const { project, state } = seedTransaction(vault, "human-arrow-to-agent");
   refreshTransaction(
-    { vault, project, spec: specV2, expectedToken: state.committedToken },
+    { root: vault, project, spec: specV2, expectedToken: state.committedToken },
     {
       onBoundary(name) {
         if (name === boundary) process.kill(process.pid, "SIGTERM");
@@ -91,7 +91,7 @@ export function injectionResult(
   const { project, state } = seedTransaction(vault, "human-arrow-to-agent");
   try {
     refreshTransaction(
-      { vault, project, spec: specV2, expectedToken: state.committedToken },
+      { root: vault, project, spec: specV2, expectedToken: state.committedToken },
       {
         onBoundary(name) {
           if (name === injectionBoundary(window)) humanSave(vault, project, window);

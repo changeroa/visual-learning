@@ -52,7 +52,7 @@ export function stageRevision(
 }
 
 export function noteForWorking(
-  vault: string,
+  root: string,
   paths: TransactionPaths,
   spec: VisualNoteSpec,
   workingPath: string,
@@ -60,8 +60,8 @@ export function noteForWorking(
 ): string {
   return noteBytes(
     spec,
-    workingPath.slice(vault.length + 1),
-    paths.stableSvgPath.slice(vault.length + 1),
+    workingPath.slice(root.length + 1),
+    paths.stableSvgPath.slice(root.length + 1),
     deprecatedAnchors,
   );
 }

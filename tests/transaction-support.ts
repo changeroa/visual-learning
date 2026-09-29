@@ -32,7 +32,7 @@ export function seedTransaction(
 } {
   const { project } = provisionFixture(vault, fixture);
   const scene = readFixtureScene(vault, project);
-  bootstrapTransaction({ vault, project, spec: specV1, scene });
+  bootstrapTransaction({ root: vault, project, spec: specV1, scene });
   return {
     project,
     state: readState(transactionPaths(vault, project, specV1.artifactId).statePath),

@@ -28,7 +28,7 @@ describe("transaction final CAS", () => {
 
     expect(() =>
       refreshTransaction(
-        { vault: root, project, spec: specV2, expectedToken: state.committedToken },
+        { root, project, spec: specV2, expectedToken: state.committedToken },
         {
           onBoundary(name) {
             if (name === "final-source-cas") humanSave(root, project, "after-close");
@@ -53,7 +53,7 @@ describe("transaction final CAS", () => {
 
     expect(() =>
       refreshTransaction(
-        { vault: root, project, spec: specV2, expectedToken: state.committedToken },
+        { root, project, spec: specV2, expectedToken: state.committedToken },
         {
           onBoundary(name) {
             if (name !== "validate-state-tuple") return;
@@ -88,7 +88,7 @@ describe("transaction final CAS", () => {
 
     expect(() =>
       refreshTransaction(
-        { vault: root, project, spec: specV2, expectedToken: state.committedToken },
+        { root, project, spec: specV2, expectedToken: state.committedToken },
         {
           onBoundary(name) {
             if (name === "validate-state-tuple") humanSave(root, project, "after-state-rename");

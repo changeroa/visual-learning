@@ -114,13 +114,13 @@ export function refreshSpec(input: {
   const txPaths = transactionPaths(root, input.project, validated.spec.artifactId);
   const result = existsSync(txPaths.statePath)
     ? refreshTransaction({
-        vault: root,
+        root,
         project: input.project,
         spec: validated.spec,
         expectedToken: input.expectedToken,
       })
     : refreshDrawing({
-        vault: root,
+        root,
         project: input.project,
         spec: validated.spec,
         expectedToken: input.expectedToken,
@@ -141,7 +141,7 @@ export function restoreArtifact(input: {
     operation: "restore",
     artifactId: input.artifactId,
     ...restoreTransaction({
-      vault: root,
+      root,
       project: input.project,
       artifactId: input.artifactId,
       revisionToken: input.revisionToken,
