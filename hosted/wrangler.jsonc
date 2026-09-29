@@ -14,8 +14,7 @@
     {
       "binding": "ATLAS_DB",
       "database_name": "visual-atlas",
-      // Placeholder; todo 14 fills in the real id after `wrangler d1 create`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "2c9139ad-4b4f-4e41-8886-f9ce7ceb4098",
       "migrations_dir": "migrations"
     }
   ],
@@ -23,10 +22,10 @@
   "preview_urls": false,
   "routes": [{ "pattern": "atlas.iyendev.com", "custom_domain": true }],
   "vars": {
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": "",
+    "ACCESS_TEAM_DOMAIN": "changeroa.cloudflareaccess.com",
+    "ACCESS_AUD": "af96b5c97b0bbaf97a8837de11da383a58bc16b7ef58a9695e04f1d919e80103",
     "ALLOWED_EMAIL": "changeroa@gmail.com",
-    "SERVICE_CLIENT_ID": ""
+    "SERVICE_CLIENT_ID": "0bb2e0d78546afe75291d31227ed2173.access"
   },
   "env": {
     // Bindings and vars are not inherited by named environments, so `local` repeats them.
