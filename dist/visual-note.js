@@ -5870,7 +5870,10 @@ function ensureRealDirectory(path, label) {
     } catch (error) {
       throw new InputError(`${label} is unavailable: ${path}`, { cause: error });
     }
-    if (status.isSymbolicLink() || !status.isDirectory()) {
+    if (status.isSymbolicLink()) {
+      throw new InputError(`${label} has a symlinked ancestor: ${current}; resolve it with realpath first`);
+    }
+    if (!status.isDirectory()) {
       throw new InputError(`${label} must be a real directory`);
     }
   }
