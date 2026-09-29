@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
   lstatSync,
   mkdirSync,
@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -13,12 +14,35 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { safeCreateFile, safeMakeDirectories } from "../src/safe-path";
 
+const rootPrefix = `visual-note-root-${process.pid}-`;
+const outsidePrefix = `visual-note-outside-${process.pid}-`;
+const testDirectories = new Set<string>();
+
 function fixture(): { readonly root: string; readonly outside: string } {
-  return {
-    root: realpathSync(mkdtempSync(join(tmpdir(), "visual-note-root-"))),
-    outside: realpathSync(mkdtempSync(join(tmpdir(), "visual-note-outside-"))),
-  };
+  const root = realpathSync(mkdtempSync(join(tmpdir(), rootPrefix)));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), outsidePrefix)));
+  testDirectories.add(root);
+  testDirectories.add(outside);
+  return { root, outside };
 }
+
+afterEach(() => {
+  for (const directory of testDirectories) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  testDirectories.clear();
+});
+
+afterAll(() => {
+  const remainingDirectories = readdirSync(tmpdir(), { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        (entry.name.startsWith(rootPrefix) || entry.name.startsWith(outsidePrefix)),
+    )
+    .map((entry) => entry.name);
+  expect(remainingDirectories).toEqual([]);
+});
 
 describe("descriptor-relative safe mutation", () => {
   test("rejects path traversal with zero writes", () => {
