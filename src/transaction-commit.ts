@@ -42,7 +42,7 @@ function mark(
 
 function commitPrepared(
   input: {
-    readonly vault: string;
+    readonly root: string;
     readonly project: string;
     readonly artifactId: string;
     readonly expectedToken: string;
@@ -50,7 +50,7 @@ function commitPrepared(
   },
   control?: TransactionControl,
 ): TransactionResult {
-  const paths = transactionPaths(input.vault, input.project, input.artifactId);
+  const paths = transactionPaths(input.root, input.project, input.artifactId);
   const lock = acquireLock(paths.lockRoot, "exclusive");
   let subscription: ReturnType<typeof watch> | null = null;
   let previousState: StateRecord | null = null;
@@ -86,7 +86,7 @@ function commitPrepared(
     const workingPath = paths.workingPath(token);
     const revisionPath = paths.revisionPath(token);
     const note = noteForWorking(
-      input.vault,
+      input.root,
       paths,
       prepared.spec,
       workingPath,
@@ -182,7 +182,7 @@ function commitPrepared(
 
 export function refreshTransaction(
   input: {
-    readonly vault: string;
+    readonly root: string;
     readonly project: string;
     readonly spec: VisualNoteSpec;
     readonly expectedToken: string;
@@ -191,7 +191,7 @@ export function refreshTransaction(
 ): TransactionResult {
   return commitPrepared(
     {
-      vault: input.vault,
+      root: input.root,
       project: input.project,
       artifactId: input.spec.artifactId,
       expectedToken: input.expectedToken,
@@ -210,7 +210,7 @@ export function refreshTransaction(
 
 export function restoreTransaction(
   input: {
-    readonly vault: string;
+    readonly root: string;
     readonly project: string;
     readonly artifactId: string;
     readonly revisionToken: string;
@@ -219,15 +219,13 @@ export function restoreTransaction(
   control?: TransactionControl,
 ): TransactionResult {
   const files = revisionFiles(
-    transactionPaths(input.vault, input.project, input.artifactId).revisionPath(
-      input.revisionToken,
-    ),
+    transactionPaths(input.root, input.project, input.artifactId).revisionPath(input.revisionToken),
   );
   const spec = JSON.parse(readFileSync(files.spec, "utf8")) as VisualNoteSpec;
   const scene = parseSceneMarkdown(readFileSync(files.snapshot, "utf8")).scene;
   return commitPrepared(
     {
-      vault: input.vault,
+      root: input.root,
       project: input.project,
       artifactId: input.artifactId,
       expectedToken: input.expectedToken,

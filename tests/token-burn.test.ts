@@ -20,7 +20,7 @@ describe("begin token burn", () => {
 
     expect(() =>
       refreshTransaction(
-        { vault: root, project, spec: specV2, expectedToken: state.committedToken },
+        { root, project, spec: specV2, expectedToken: state.committedToken },
         {
           onBoundary(name) {
             if (name === "prepared-write") throw new Error("boom");
@@ -31,7 +31,7 @@ describe("begin token burn", () => {
     expect(existsSync(join(paths.burnedRoot, "cas-1.json"))).toBe(true);
 
     const next = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: transactionState(root, project).committedToken,
@@ -49,7 +49,7 @@ describe("begin token burn", () => {
 
     expect(() =>
       refreshTransaction(
-        { vault: root, project, spec: specV2, expectedToken: state.committedToken },
+        { root, project, spec: specV2, expectedToken: state.committedToken },
         {
           onBoundary(name) {
             if (name === "begin-parent-fsync") throw new Error("cancelled");

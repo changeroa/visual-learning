@@ -98,13 +98,13 @@ function main(): void {
   const abaVault = fixtureRoot(out, "aba");
   const abaSeed = seedTransaction(abaVault, "human-arrow-to-agent");
   const refreshed = refreshTransaction({
-    vault: abaVault,
+    root: abaVault,
     project: abaSeed.project,
     spec: specV2,
     expectedToken: abaSeed.state.committedToken,
   });
   const restored = restoreTransaction({
-    vault: abaVault,
+    root: abaVault,
     project: abaSeed.project,
     artifactId: specV1.artifactId,
     revisionToken: "cas-0",
@@ -113,7 +113,7 @@ function main(): void {
   let stale = "UNEXPECTED-SUCCESS";
   try {
     refreshTransaction({
-      vault: abaVault,
+      root: abaVault,
       project: abaSeed.project,
       spec: specV2,
       expectedToken: abaSeed.state.committedToken,
@@ -127,7 +127,7 @@ function main(): void {
   try {
     refreshTransaction(
       {
-        vault: burnVault,
+        root: burnVault,
         project: burnSeed.project,
         spec: specV2,
         expectedToken: burnSeed.state.committedToken,
@@ -143,7 +143,7 @@ function main(): void {
     join(transactionPaths(burnVault, burnSeed.project, specV1.artifactId).burnedRoot, "cas-1.json"),
   );
   const afterBurn = refreshTransaction({
-    vault: burnVault,
+    root: burnVault,
     project: burnSeed.project,
     spec: specV2,
     expectedToken: transactionState(burnVault, burnSeed.project).committedToken,

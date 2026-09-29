@@ -175,7 +175,7 @@ export function refreshWithInjection(input: {
   try {
     refreshTransaction(
       {
-        vault: input.vault,
+        root: input.vault,
         project: input.project,
         spec: input.spec,
         expectedToken: input.expectedToken,

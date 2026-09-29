@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { artifactPaths } from "../src/artifact-files";
@@ -27,7 +27,7 @@ describe("refresh preservation", () => {
     if (humanBefore === undefined) throw new TypeError("missing human arrow");
 
     const result = refreshArtifact({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: "cas-0",
@@ -45,9 +45,9 @@ describe("refresh preservation", () => {
   test("issues a fresh monotonic CAS token on every successful refresh", () => {
     const { project } = provisionFixture(root, "human-arrow-to-agent");
 
-    const first = refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    const first = refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const second = refreshArtifact({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: first.token,
@@ -72,7 +72,7 @@ describe("refresh preservation", () => {
     serviceLabel.containerId = queue.id;
     writeFixtureScene(root, project, scene);
 
-    refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(root, project);
     const nextServiceLabel = after.elements.find((element) => element.id === serviceLabel.id);
 
@@ -90,7 +90,7 @@ describe("refresh preservation", () => {
     const humanBefore = before.elements.find((element) => element.id === "human-text");
     if (humanBefore === undefined) throw new TypeError("missing human text");
 
-    refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(root, project);
     const humanAfter = after.elements.find((element) => element.id === "human-text");
 
@@ -100,7 +100,7 @@ describe("refresh preservation", () => {
 
   test("preserves mixed human and agent groups", () => {
     const { project } = provisionFixture(root, "mixed-group");
-    refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(root, project);
     const agent = after.elements.find(
       (element) => element.customData?.["semanticId"] === "service" && element.type === "rectangle",
@@ -125,7 +125,7 @@ describe("refresh preservation", () => {
     service.link = `#^${queue.id}`;
     writeFixtureScene(root, project, scene);
 
-    refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(root, project);
     const nextService = after.elements.find((element) => element.id === service.id);
 
@@ -140,7 +140,7 @@ describe("refresh preservation", () => {
     );
     if (queue === undefined) throw new TypeError("missing queue shape");
 
-    const result = refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    const result = refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(root, project);
     const anchor = after.elements.find((element) => element.id === queue.id);
     const note = readFileSync(join(root, artifactPaths(project, specV2.artifactId).note), "utf8");
@@ -167,7 +167,7 @@ describe("refresh preservation", () => {
     human.link = `#^${queue.id}`;
     writeFixtureScene(root, project, scene);
 
-    refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" });
+    refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(root, project);
     const nextHuman = after.elements.find((element) => element.id === human.id);
     const anchor = after.elements.find((element) => element.id === queue.id);
@@ -188,9 +188,9 @@ describe("refresh preservation", () => {
     const drawing = artifactPaths(project, specV2.artifactId).drawing;
     const before = readFileSync(join(root, drawing), "utf8");
 
-    expect(() =>
-      refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" }),
-    ).toThrow(/dangling/i);
+    expect(() => refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" })).toThrow(
+      /dangling/i,
+    );
     expect(readFileSync(join(root, drawing), "utf8")).toBe(before);
   });
 
@@ -199,9 +199,9 @@ describe("refresh preservation", () => {
     const drawing = artifactPaths(project, specV2.artifactId).drawing;
     const before = readFileSync(join(root, drawing), "utf8");
 
-    expect(() =>
-      refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" }),
-    ).toThrow(/ownership/i);
+    expect(() => refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" })).toThrow(
+      /ownership/i,
+    );
     expect(readFileSync(join(root, drawing), "utf8")).toBe(before);
   });
 
@@ -210,11 +210,20 @@ describe("refresh preservation", () => {
     const drawing = artifactPaths(project, specV2.artifactId).drawing;
     const before = readFileSync(join(root, drawing), "utf8");
 
-    expect(() =>
-      refreshArtifact({ vault: root, project, spec: specV2, expectedToken: "cas-0" }),
-    ).toThrow(/cycle/i);
+    expect(() => refreshArtifact({ root, project, spec: specV2, expectedToken: "cas-0" })).toThrow(
+      /cycle/i,
+    );
     expect(parseSceneMarkdown(readFileSync(join(root, drawing), "utf8")).scene).toEqual(
       parseSceneMarkdown(before).scene,
     );
+  });
+
+  test("reports a root-worded error when the root is a file", () => {
+    const file = join(root, "not-a-root.txt");
+    writeFileSync(file, "not a directory");
+
+    expect(() =>
+      refreshArtifact({ root: file, project: "fixture", spec: specV2, expectedToken: "cas-0" }),
+    ).toThrow("root must be a directory");
   });
 });
