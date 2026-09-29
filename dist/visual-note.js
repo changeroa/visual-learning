@@ -5403,6 +5403,26 @@ var palettes = {
   },
   question: { fill: "#ede9fe", stroke: "#6d28d9", text: "#4c1d95", badge: "QUESTION" }
 };
+var categoryPalettes = {
+  cloudflare: { stroke: "#e8590c", background: "#fff4e6" },
+  aws: { stroke: "#f08c00", background: "#fff9db" },
+  external: { stroke: "#64748b", background: "#f8fafc" },
+  data: { stroke: "#1971c2", background: "#e7f5ff" },
+  runtime: { stroke: "#7950f2", background: "#f3f0ff" },
+  security: { stroke: "#2f9e44", background: "#ebfbee" },
+  risk: { stroke: "#e03131", background: "#fff5f5" },
+  neutral: { stroke: "#475569", background: "#f8fafc" }
+};
+function styleForPlannedElement(input) {
+  const palette = categoryPalettes[input.category];
+  const isShape = ["rectangle", "ellipse", "diamond"].includes(input.type);
+  return {
+    strokeColor: palette.stroke,
+    backgroundColor: isShape ? palette.background : "transparent",
+    fillStyle: "solid",
+    fontFamily: input.type === "text" ? input.role === "edge-label" ? 2 : 1 : null
+  };
+}
 function styleForClaim(semanticId, status, confidence) {
   const base = palettes[status];
   return {
@@ -6246,6 +6266,11 @@ function planScene(spec, idFactory = stableElementId) {
     elements.push({
       ...element,
       id,
+      style: styleForPlannedElement({
+        category,
+        role: element.role,
+        type: element.type
+      }),
       customData: {
         schemaVersion: 1,
         owner: "agent",
@@ -6384,16 +6409,6 @@ function planScene(spec, idFactory = stableElementId) {
 }
 
 // src/scene-bootstrap.ts
-var CATEGORY_PALETTE = {
-  cloudflare: { stroke: "#e8590c", background: "#fff4e6" },
-  aws: { stroke: "#f08c00", background: "#fff9db" },
-  external: { stroke: "#64748b", background: "#f8fafc" },
-  data: { stroke: "#1971c2", background: "#e7f5ff" },
-  runtime: { stroke: "#7950f2", background: "#f3f0ff" },
-  security: { stroke: "#2f9e44", background: "#ebfbee" },
-  risk: { stroke: "#e03131", background: "#fff5f5" },
-  neutral: { stroke: "#475569", background: "#f8fafc" }
-};
 function hashId(value) {
   let hash = 0;
   for (const character of value)
@@ -6407,8 +6422,6 @@ function sceneFromSpec(spec, source) {
     version: 2,
     source,
     elements: plan.elements.map((element, index) => {
-      const palette = CATEGORY_PALETTE[element.customData.category];
-      const isShape = ["rectangle", "ellipse", "diamond"].includes(element.type);
       return {
         id: element.id,
         type: element.type,
@@ -6417,9 +6430,9 @@ function sceneFromSpec(spec, source) {
         width: element.width,
         height: element.height,
         angle: 0,
-        strokeColor: palette.stroke,
-        backgroundColor: isShape ? palette.background : "transparent",
-        fillStyle: "solid",
+        strokeColor: element.style.strokeColor,
+        backgroundColor: element.style.backgroundColor,
+        fillStyle: element.style.fillStyle,
         strokeWidth: element.role === "title" ? 1 : 2,
         strokeStyle: element.customData.status === "inference" ? "dashed" : "solid",
         roughness: element.role === "edge-line" ? 1 : element.role.startsWith("frame") ? 0 : 0.7,
@@ -6439,7 +6452,7 @@ function sceneFromSpec(spec, source) {
         ...element.type === "text" ? {
           text: element.text ?? "",
           fontSize: element.role === "title" ? 34 : element.role === "frame-label" ? 24 : element.role === "edge-label" ? 13 : 20,
-          fontFamily: element.role === "edge-label" ? 2 : 1,
+          fontFamily: element.style.fontFamily ?? 1,
           textAlign: element.role === "frame-label" ? "left" : "center",
           verticalAlign: "middle",
           containerId: null,
@@ -7295,15 +7308,7 @@ function hashId2(value) {
     hash = hash * 31 + character.charCodeAt(0) >>> 0;
   return hash;
 }
-function statusStyle(status) {
-  if (status === "fact")
-    return { strokeColor: "#1971c2", backgroundColor: "#d0ebff", strokeStyle: "solid" };
-  if (status === "inference")
-    return { strokeColor: "#e67700", backgroundColor: "#fff3bf", strokeStyle: "dashed" };
-  return { strokeColor: "#7048e8", backgroundColor: "#e5dbff", strokeStyle: "solid" };
-}
 function freshElement(planned) {
-  const style = statusStyle(planned.customData.status);
   const common = {
     id: planned.id,
     type: planned.type,
@@ -7312,11 +7317,11 @@ function freshElement(planned) {
     width: planned.width,
     height: planned.height,
     angle: 0,
-    strokeColor: style.strokeColor,
-    backgroundColor: planned.type === "rectangle" ? style.backgroundColor : "transparent",
-    fillStyle: "solid",
+    strokeColor: planned.style.strokeColor,
+    backgroundColor: planned.style.backgroundColor,
+    fillStyle: planned.style.fillStyle,
     strokeWidth: planned.role === "title" ? 1 : 2,
-    strokeStyle: style.strokeStyle,
+    strokeStyle: planned.customData.status === "inference" ? "dashed" : "solid",
     roughness: 0,
     opacity: 100,
     roundness: null,
@@ -7338,7 +7343,7 @@ function freshElement(planned) {
       ...common,
       text: planned.text ?? "",
       fontSize: planned.role === "title" ? 32 : planned.role === "edge-label" ? 16 : 20,
-      fontFamily: 2,
+      fontFamily: planned.style.fontFamily ?? 1,
       textAlign: "center",
       verticalAlign: "middle",
       containerId: null,
@@ -7364,16 +7369,17 @@ function freshElement(planned) {
 }
 function mergeAgent(current, planned) {
   const updated = structuredClone(current);
-  const style = statusStyle(planned.customData.status);
-  updated.strokeColor = style.strokeColor;
-  updated.backgroundColor = planned.type === "rectangle" ? style.backgroundColor : "transparent";
-  updated.strokeStyle = style.strokeStyle;
+  updated.strokeColor = planned.style.strokeColor;
+  updated.backgroundColor = planned.style.backgroundColor;
+  updated["fillStyle"] = planned.style.fillStyle;
+  updated.strokeStyle = planned.customData.status === "inference" ? "dashed" : "solid";
   updated.strokeWidth = planned.role === "title" ? 1 : 2;
   updated.customData = structuredClone(planned.customData);
   if (planned.type === "text") {
     updated.text = planned.text ?? "";
     updated.originalText = planned.text ?? "";
     updated.rawText = planned.text ?? "";
+    updated["fontFamily"] = planned.style.fontFamily ?? 1;
   }
   return updated;
 }
@@ -10058,11 +10064,15 @@ async function publish(input) {
     env: input.env,
     ...input.repoRoot === undefined ? {} : { repoRoot: input.repoRoot }
   });
-  const sent = payload.figures.map((figure) => String(figure.spec.artifactId));
-  const response = publishResponseSchema(sent).safeParse(await request(remote, "/api/publish", credentials, input.env, JSON.stringify(payload)));
-  if (!response.success)
-    throw new RuntimeError(invalidPublishResponse);
-  return { projectId: payload.projectId, results: response.data.results };
+  const results = [];
+  for (const figure of payload.figures) {
+    const body = JSON.stringify({ ...payload, figures: [figure] });
+    const response = publishResponseSchema([String(figure.spec.artifactId)]).safeParse(await request(remote, "/api/publish", credentials, input.env, body));
+    if (!response.success)
+      throw new RuntimeError(invalidPublishResponse);
+    results.push(...response.data.results);
+  }
+  return { projectId: payload.projectId, results };
 }
 function existingBytes(out, relativePath) {
   const path = join13(out, relativePath);
@@ -10339,7 +10349,7 @@ function learningIndexLines(spec) {
 // src/svg-gallery.ts
 var CARD_PADDING = 32;
 var CAPTION_HEIGHT = 48;
-var CATEGORY_PALETTE2 = {
+var CATEGORY_PALETTE = {
   cloudflare: { fill: "#fff4e6", stroke: "#e8590c", text: "#7c2d12" },
   aws: { fill: "#fff9db", stroke: "#f08c00", text: "#78350f" },
   external: { fill: "#f8fafc", stroke: "#64748b", text: "#334155" },
@@ -10357,7 +10367,7 @@ function textLines(text, x, fontSize, fill) {
 `).map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : fontSize + 4}" fill="${fill}">${escapeXml(line)}</tspan>`).join("");
 }
 function paletteFor(category) {
-  return CATEGORY_PALETTE2[category];
+  return CATEGORY_PALETTE[category];
 }
 function shapeMarkup(type, x, y, width, height, palette, dashArray, isFrame) {
   const shared = `fill="${palette.fill}" fill-opacity="${isFrame ? "0.55" : "1"}" stroke="${palette.stroke}" stroke-width="${isFrame ? "2" : "3"}"${dashArray === null ? "" : ` stroke-dasharray="${dashArray}"`} vector-effect="non-scaling-stroke"`;
