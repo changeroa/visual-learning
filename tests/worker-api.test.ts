@@ -101,7 +101,7 @@ beforeAll(async () => {
     false,
     ["sign"],
   );
-  userToken = await sign({ ...baseClaims(), email: "changeroa@gmail.com" });
+  userToken = await sign({ ...baseClaims(), email: "owner@example.com" });
   serviceToken = await sign({ ...baseClaims(), common_name: "test-client.access" });
 });
 
@@ -117,7 +117,7 @@ beforeEach(() => {
     ATLAS_DB: db,
     ACCESS_TEAM_DOMAIN: "test.cloudflareaccess.com",
     ACCESS_AUD: "test-aud",
-    ALLOWED_EMAIL: "changeroa@gmail.com",
+    ALLOWED_EMAIL: "owner@example.com",
     SERVICE_CLIENT_ID: "test-client.access",
     ENVIRONMENT: "local",
     LOCAL_JWKS_JSON: JSON.stringify({ keys: [testKey.publicJwk] }),
@@ -179,7 +179,7 @@ describe("routing, identity, and headers", () => {
 
   test("GET /api/me reports the user and the service identity", async () => {
     const user = await call("GET", "/api/me", { token: userToken });
-    expect(await user.json()).toEqual({ kind: "user", email: "changeroa@gmail.com" });
+    expect(await user.json()).toEqual({ kind: "user", email: "owner@example.com" });
     const service = await call("GET", "/api/me", { token: serviceToken });
     expect(await service.json()).toEqual({ kind: "service" });
   });

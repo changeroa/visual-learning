@@ -22,7 +22,7 @@ import { SQLiteD1 } from "./d1-sqlite";
 
 // In-memory stand-in for the todo 6 Worker API. It reuses the real D1 atlas store over the
 // bun:sqlite adapter, so CAS tokens, 409 conflicts, notes, and orphan flags behave like D1.
-export const stubUserEmail = "changeroa@gmail.com";
+export const stubUserEmail = "owner@example.com";
 export const stubProjectId = "visual-learning";
 export const stubArtifactId = "vl-03-cas-refresh";
 

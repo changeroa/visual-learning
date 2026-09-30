@@ -124,8 +124,8 @@ The atlas is a Cloudflare Worker, provisioned and deployed from the macmini's `w
 
 - **Worker** `visual-atlas` (`hosted/worker/index.ts`) with Static Assets serving the single-page app from `hosted/dist` (built by `bun run build:web`, fonts self-hosted). It is served only at the custom domain `atlas.iyendev.com`; `workers_dev` and `preview_urls` are off.
 - **D1** database `visual-atlas`, bound as `ATLAS_DB`, schema in `hosted/migrations/`. Its `database_id` comes from `wrangler d1 create`.
-- **Access** application for `atlas.iyendev.com` in the team `changeroa.cloudflareaccess.com`, with Google as the only login method. One Allow policy includes exactly the email `changeroa@gmail.com`; one Service Auth policy admits the service token `visual-atlas-publish`.
-- **Worker vars** in `hosted/wrangler.jsonc`: `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ALLOWED_EMAIL`, `SERVICE_CLIENT_ID`. These are identifiers, not secrets. The Worker checks `Cf-Access-Jwt-Assertion` on every `/api/*` request against the team JWKS, `aud`, `iss`, and `exp`, so a request that bypasses Access is rejected. `POST /api/publish` and `DELETE /api/projects/:p` accept only the service identity.
+- **Access** application for `atlas.iyendev.com` in the team `changeroa.cloudflareaccess.com`, with Google as the only login method. One Allow policy includes exactly one email (the owner's Google account); one Service Auth policy admits the service token `visual-atlas-publish`.
+- **Worker vars** in `hosted/wrangler.jsonc`: `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `SERVICE_CLIENT_ID`. These are identifiers, not secrets. **Worker secret** `ALLOWED_EMAIL`: the one Google account the Worker accepts, kept out of the repository and set with `wrangler secret put`; without it the Worker rejects every request. The Worker checks `Cf-Access-Jwt-Assertion` on every `/api/*` request against the team JWKS, `aud`, `iss`, and `exp`, so a request that bypasses Access is rejected. `POST /api/publish` and `DELETE /api/projects/:p` accept only the service identity.
 
 Runbook (from the macmini, in a synced copy of this repository):
 
@@ -135,6 +135,7 @@ bunx wrangler d1 create visual-atlas            # once; write the id into hosted
 bunx wrangler d1 migrations apply visual-atlas --remote --config hosted/wrangler.jsonc
 bun run build:web
 bunx wrangler deploy --config hosted/wrangler.jsonc
+bunx wrangler secret put ALLOWED_EMAIL --config hosted/wrangler.jsonc   # once; prompts for the owner's Google email
 ```
 
 Touch only the `visual-atlas` Worker, database, and Access application; leave every other D1 database, R2 bucket, Worker, and DNS record in the account alone.

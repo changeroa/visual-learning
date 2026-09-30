@@ -84,7 +84,7 @@ function userClaims(overrides: Record<string, unknown> = {}): Record<string, unk
     iss: "https://team.cloudflareaccess.com",
     exp: NOW_SECONDS + 3600,
     nbf: NOW_SECONDS - 60,
-    email: " changerao@gmail.com ",
+    email: " owner@example.com ",
     ...overrides,
   };
 }
@@ -103,7 +103,7 @@ function localEnv(keys: readonly JsonWebKey[]): Env {
   return {
     ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
     ACCESS_AUD: "atlas-audience",
-    ALLOWED_EMAIL: "changerao@gmail.com",
+    ALLOWED_EMAIL: "owner@example.com",
     SERVICE_CLIENT_ID: "publish-client",
     ENVIRONMENT: "local",
     LOCAL_JWKS_JSON: JSON.stringify({ keys }),
@@ -114,7 +114,7 @@ function productionEnv(): Env {
   return {
     ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
     ACCESS_AUD: "atlas-audience",
-    ALLOWED_EMAIL: "changerao@gmail.com",
+    ALLOWED_EMAIL: "owner@example.com",
     SERVICE_CLIENT_ID: "publish-client",
   };
 }
@@ -241,11 +241,11 @@ beforeAll(async () => {
 describe("Cloudflare Access identities", () => {
   test("accepts the single allowed user case-insensitively after trimming", async () => {
     const primary = getPrimaryKey();
-    const token = await signToken(primary, userClaims({ email: "  ChangeRao@GMAIL.com  " }));
+    const token = await signToken(primary, userClaims({ email: "  Owner@EXAMPLE.com  " }));
 
     await expect(
       authenticate(requestWithHeader(token), localEnv([primary.publicJwk]), localProvider()),
-    ).resolves.toEqual({ kind: "user", email: "ChangeRao@GMAIL.com" });
+    ).resolves.toEqual({ kind: "user", email: "Owner@EXAMPLE.com" });
   });
 
   test("rejects a different user email with 403", async () => {
@@ -291,7 +291,7 @@ describe("Cloudflare Access identities", () => {
 
   test("does not trust the asserted-email header without a JWT", async () => {
     const request = new Request("https://atlas.example/api/me", {
-      headers: { "Cf-Access-Authenticated-User-Email": "changerao@gmail.com" },
+      headers: { "Cf-Access-Authenticated-User-Email": "owner@example.com" },
     });
 
     await expectAuthError(authenticate(request, localEnv([]), localProvider()), 401);

@@ -18,7 +18,7 @@ import { seedSpecAndScene, seedVerifyRuns } from "../../tests/support/hosted-api
 const local = {
   teamDomain: "local-test.cloudflareaccess.com",
   aud: "local-test-aud",
-  email: "changeroa@gmail.com",
+  email: "owner@example.com",
   serviceClientId: "local-test-client.access",
 };
 const repoRoot = resolve(import.meta.dir, "../..");

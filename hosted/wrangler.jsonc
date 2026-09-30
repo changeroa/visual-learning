@@ -21,10 +21,12 @@
   "workers_dev": false,
   "preview_urls": false,
   "routes": [{ "pattern": "atlas.iyendev.com", "custom_domain": true }],
+  // ALLOWED_EMAIL (the single allowlisted Google account) is a Worker secret, not a var:
+  //   bunx wrangler secret put ALLOWED_EMAIL --config hosted/wrangler.jsonc --env ""
+  // Without it the Worker rejects every request (fail-closed).
   "vars": {
     "ACCESS_TEAM_DOMAIN": "changeroa.cloudflareaccess.com",
     "ACCESS_AUD": "af96b5c97b0bbaf97a8837de11da383a58bc16b7ef58a9695e04f1d919e80103",
-    "ALLOWED_EMAIL": "changeroa@gmail.com",
     "SERVICE_CLIENT_ID": "0bb2e0d78546afe75291d31227ed2173.access"
   },
   "env": {
@@ -45,7 +47,7 @@
       "vars": {
         "ACCESS_TEAM_DOMAIN": "local-test.cloudflareaccess.com",
         "ACCESS_AUD": "local-test-aud",
-        "ALLOWED_EMAIL": "changeroa@gmail.com",
+        "ALLOWED_EMAIL": "owner@example.com",
         "SERVICE_CLIENT_ID": "local-test-client.access",
         "ENVIRONMENT": "local",
         "LOCAL_JWKS_JSON": "{\"keys\":[{\"kty\":\"RSA\",\"n\":\"07oK-ydFlq5-VR3DOPMyZzwI79bJmxMGk5OqDOMVUhOnehbhaMN0T3a7Z-BPkVdwNH2QnRCFwfkRs13UYgE7AMnbjl67YlS03dfIVTQLnLj39h_JUjLALFdrcZ29ui7QRJMr9ep7TChA4R34WmMG8myL1-u7H5ZRbdzDtTr8xr9E6DSx2PKgfbx3hL-E3OloYVYXbSGTHowuXG2vLCxjLl5hJIvNO8vDBHGo5LH_rxn8L-HBI0l1mdXB9c-MjDfF6pHF6aebcuucBrPRqxBSlHSqBUGT8mf8Las1pdc0hwG2kf6w_9V5nWV1kpR4cMgZzSROKU7YrNOdS48AAstk_w\",\"e\":\"AQAB\",\"alg\":\"RS256\",\"kid\":\"visual-atlas-local-test\",\"use\":\"sig\"}]}"
