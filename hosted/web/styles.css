@@ -160,9 +160,7 @@ button:disabled {
 
 .split {
   flex: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  display: flex;
   min-height: 0;
 }
 
@@ -171,11 +169,11 @@ button:disabled {
 }
 
 .canvas-pane {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--line);
   background: var(--paper);
 }
 
@@ -261,32 +259,160 @@ button:disabled {
   inset: 0;
 }
 
+/* Right dock, after Lucidchart's dock and draw.io's format panel: a resizable panel plus an always
+   visible icon rail, so the panel can be folded away without losing the way back. */
+.resizer {
+  flex: none;
+  width: 9px;
+  margin: 0 -4px;
+  position: relative;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 4px;
+  background: var(--line);
+}
+
+.resizer:hover::before,
+.resizer:focus-visible::before {
+  inset: 0 3px;
+  background: var(--accent);
+}
+
+.resizer:focus-visible {
+  outline: none;
+}
+
+.dock {
+  flex: none;
+  display: flex;
+  min-height: 0;
+  background: var(--paper);
+}
+
 .side-pane {
+  width: var(--panel-width, 380px);
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--paper);
 }
 
-.tabs {
-  display: flex;
-  border-bottom: 1px solid var(--line);
+.side-pane[hidden] {
+  display: none;
 }
 
-.tab {
-  flex: 1;
+.split[data-panel="closed"] .dock {
+  border-left: 1px solid var(--line);
+}
+
+.dock-rail {
+  flex: none;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 6px;
+  border-left: 1px solid var(--line);
+  background: var(--wash);
+}
+
+.rail-tab,
+.rail-toggle {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 2px 6px;
   border: none;
-  border-radius: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.rail-tab:hover,
+.rail-toggle:hover {
+  background: rgba(31, 41, 51, 0.06);
+  color: var(--ink);
+}
+
+.rail-tab.active {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.rail-label {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.rail-badge {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.rail-toggle {
+  margin-top: auto;
+}
+
+.icon {
+  flex: none;
+  display: block;
+}
+
+.view-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 7px;
   background: var(--paper);
   color: var(--muted);
-  padding: 10px;
-  border-bottom: 3px solid transparent;
 }
 
-.tab.active {
-  color: var(--ink);
-  font-weight: 700;
-  border-bottom-color: var(--accent);
+.icon-button[aria-pressed="true"] {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focus mode (Excalidraw's zen mode, Figma's hide-UI): only the toolbar and the canvas remain. */
+body.focus-mode .app-header,
+.split.focus .dock,
+.split.focus .resizer {
+  display: none;
 }
 
 .tab-body {
@@ -446,24 +572,67 @@ button:disabled {
 
 @media (max-width: 900px) {
   .app {
-    height: auto;
-    min-height: 100vh;
+    height: 100dvh;
   }
 
   .split {
-    display: flex;
     flex-direction: column;
   }
 
-  .canvas-pane {
-    border-right: none;
+  /* Bottom sheet: the canvas keeps the screen; the panel rises over three snap heights. */
+  .dock {
+    flex-direction: column-reverse;
+    border-top: 1px solid var(--line);
+  }
+
+  .split[data-panel="closed"] .dock {
+    border-left: none;
+  }
+
+  .side-pane {
+    width: auto;
+  }
+
+  .split[data-sheet="half"] .side-pane {
+    height: 45dvh;
+  }
+
+  .split[data-sheet="full"] .side-pane {
+    height: 78dvh;
+  }
+
+  .dock-rail {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    border-left: none;
     border-bottom: 1px solid var(--line);
   }
 
-  /* The drawing surface itself gets >= 60vh; the toolbar and banners stack above it. */
-  .excalidraw-host {
-    flex: none;
-    height: 64vh;
+  .rail-tab {
+    flex: 1;
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 4px;
+  }
+
+  .rail-label {
+    font-size: 13px;
+  }
+
+  .rail-badge {
+    position: static;
+  }
+
+  .rail-toggle {
+    margin-top: 0;
+    padding: 8px 10px;
+  }
+
+  .split[data-sheet="full"] .rail-toggle .icon {
+    transform: rotate(180deg);
   }
 
   .zoom-group .zoom-step {
@@ -475,14 +644,6 @@ button:disabled {
   .excalidraw-host.viewing .layer-ui__wrapper,
   .excalidraw-host.viewing .App-bottom-bar {
     display: none;
-  }
-
-  .side-pane {
-    min-height: 60vh;
-  }
-
-  .tab-body {
-    overflow-y: visible;
   }
 
   .compare {

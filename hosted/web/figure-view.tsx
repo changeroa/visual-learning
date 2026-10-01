@@ -18,7 +18,16 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type PointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   api,
   errorText,
@@ -29,20 +38,32 @@ import {
   sceneConflictOf,
 } from "./api";
 import { useAnnounce } from "./app-events";
+import { Icon, type IconName } from "./icons";
 import { type NoteDraft, NotesPanel, readNoteDrafts, writeNoteDraft } from "./notes-panel";
+import {
+  clampPanelWidth,
+  nextSheet,
+  type PanelLayout,
+  type PanelTab,
+  panelWidth,
+  readPanelLayout,
+  writePanelLayout,
+} from "./panel-layout";
 import { EvidencePanel, LearningPanel } from "./panels";
 import { clearDraft, type Draft, readDraft, writeDraft } from "./scene-draft";
 import { baseStamps, mergeThreeWay } from "./scene-merge";
 import { shortTime } from "./ui";
 
 type EditorWindow = Window & { visualAtlasEditor?: ExcalidrawImperativeAPI };
-type Tab = "learn" | "evidence" | "notes";
-
-const tabs: readonly { id: Tab; label: string }[] = [
-  { id: "learn", label: "학습" },
-  { id: "evidence", label: "근거" },
-  { id: "notes", label: "메모" },
+const tabs: readonly { id: PanelTab; label: string; icon: IconName }[] = [
+  { id: "learn", label: "학습", icon: "learn" },
+  { id: "evidence", label: "근거", icon: "evidence" },
+  { id: "notes", label: "메모", icon: "notes" },
 ];
+
+const sheetLabels = { peek: "패널 펼치기", half: "패널 크게", full: "패널 내리기" } as const;
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+const modKey = isMac ? "⌘" : "Ctrl";
 
 function toPlain(elements: readonly ExcalidrawElement[]): SceneElement[] {
   return JSON.parse(JSON.stringify(elements)) as SceneElement[];
@@ -138,8 +159,28 @@ function zoomedViewport(appState: AppState, factor: number): Viewport {
 }
 
 // Matches the styles.css breakpoint that stacks the panes and hides Excalidraw's view-mode chrome.
+const compactQuery = "(max-width: 900px)";
+
 function isCompact(): boolean {
-  return window.matchMedia("(max-width: 900px)").matches;
+  return window.matchMedia(compactQuery).matches;
+}
+
+function useCompact(): boolean {
+  const [compact, setCompact] = useState(isCompact);
+  useEffect(() => {
+    const query = window.matchMedia(compactQuery);
+    const update = () => setCompact(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return compact;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.tagName === "TEXTAREA" || target.tagName === "INPUT")
+  );
 }
 
 export function FigureView({ project, artifact }: { project: string; artifact: string }) {
@@ -224,8 +265,13 @@ function Workspace({
   const [selected, setSelected] = useState<string | null>(null);
   const [viewportReady, setViewportReady] = useState(false);
   const [zoomPercent, setZoomPercent] = useState(100);
-  const [tab, setTab] = useState<Tab>("learn");
+  const compact = useCompact();
+  const [layout, setLayout] = useState<PanelLayout>(readPanelLayout);
+  const [focusMode, setFocusMode] = useState(false);
+  const tab = layout.tab;
+  const panelOpen = compact ? layout.sheet !== "peek" : !layout.collapsed;
   const [notes, setNotes] = useState<Note[]>(figure.notes);
+  const noteCount = notes.filter((note) => !note.orphaned && note.body.trim().length > 0).length;
   const [noteDrafts, setNoteDrafts] = useState<Record<string, NoteDraft>>(() =>
     readNoteDrafts(project, artifact),
   );
@@ -381,6 +427,94 @@ function Workspace({
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, []);
 
+  useEffect(() => writePanelLayout(layout), [layout]);
+
+  useEffect(() => {
+    document.body.classList.toggle("focus-mode", focusMode);
+    return () => document.body.classList.remove("focus-mode");
+  }, [focusMode]);
+
+  // Excalidraw sizes its canvas from its container; resizing or collapsing the dock must re-measure.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host === null) return;
+    const observer = new ResizeObserver(() => apiRef.current?.refresh());
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
+  const togglePanel = useCallback(
+    () =>
+      setLayout((current) =>
+        isCompact()
+          ? { ...current, sheet: current.sheet === "peek" ? "half" : "peek" }
+          : { ...current, collapsed: !current.collapsed },
+      ),
+    [],
+  );
+
+  const chooseTab = (id: PanelTab) =>
+    setLayout((current) =>
+      isCompact()
+        ? { ...current, tab: id, sheet: current.sheet === "peek" ? "half" : current.sheet }
+        : { ...current, tab: id, collapsed: false },
+    );
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.code !== "Backslash") return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.shiftKey) setFocusMode((current) => !current);
+      else togglePanel();
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [togglePanel]);
+
+  const resizeTo = (width: number) =>
+    setLayout((current) => ({ ...current, width: clampPanelWidth(width, window.innerWidth) }));
+
+  const onResizeStart = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = layout.width;
+    const move = (moveEvent: globalThis.PointerEvent) =>
+      resizeTo(startWidth + (startX - moveEvent.clientX));
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  };
+
+  const resizeBy = (delta: number) =>
+    setLayout((current) => ({
+      ...current,
+      width: clampPanelWidth(current.width + delta, window.innerWidth),
+    }));
+
+  const onResizeKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 96 : 24;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      togglePanel();
+      return;
+    }
+    if (event.key === "ArrowLeft") resizeBy(step);
+    else if (event.key === "ArrowRight") resizeBy(-step);
+    else if (event.key === "Home") resizeTo(panelWidth.min);
+    else if (event.key === "End") resizeTo(panelWidth.max);
+    else return;
+    event.preventDefault();
+  };
+
   const enterEditing = () => {
     const excalidraw = apiRef.current;
     if (excalidraw !== null)
@@ -529,7 +663,13 @@ function Workspace({
   };
 
   return (
-    <main className="split" data-testid="figure-view">
+    <main
+      className={focusMode ? "split focus" : "split"}
+      data-testid="figure-view"
+      data-panel={panelOpen ? "open" : "closed"}
+      data-sheet={layout.sheet}
+      style={{ "--panel-width": `${layout.width}px` } as CSSProperties}
+    >
       <section className="canvas-pane" data-testid="canvas-pane">
         <div className="toolbar">
           <strong className="figure-title">{figure.spec.title}</strong>
@@ -598,6 +738,31 @@ function Workspace({
               전체 보기
             </button>
           </fieldset>
+          <div className="view-toggles">
+            <button
+              type="button"
+              className="icon-button"
+              aria-pressed={panelOpen}
+              aria-controls="atlas-side-panel"
+              onClick={togglePanel}
+              title={`${panelOpen ? "패널 접기" : "패널 펼치기"} (${modKey}+\\)`}
+              data-testid="panel-toggle"
+            >
+              <Icon name={panelOpen ? "panel-close" : "panel-open"} />
+              <span className="sr-only">{panelOpen ? "패널 접기" : "패널 펼치기"}</span>
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-pressed={focusMode}
+              onClick={() => setFocusMode((current) => !current)}
+              title={`${focusMode ? "집중 모드 끄기" : "집중 모드"} (${modKey}+Shift+\\)`}
+              data-testid="focus-toggle"
+            >
+              <Icon name={focusMode ? "focus-exit" : "focus-enter"} />
+              <span className="sr-only">{focusMode ? "집중 모드 끄기" : "집중 모드"}</span>
+            </button>
+          </div>
         </div>
         {pendingDraft !== null && (
           <div className="banner" role="alert" data-testid="draft-banner">
@@ -648,41 +813,109 @@ function Workspace({
           />
         </div>
       </section>
-      <aside className="side-pane">
-        <div className="tabs" role="tablist">
+      {!compact && panelOpen && !focusMode && (
+        // biome-ignore lint/a11y/useSemanticElements: a focusable window splitter (WAI-ARIA APG) needs a focusable element; <hr> is not interactive
+        <div
+          className="resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="패널 너비 조절"
+          aria-controls="atlas-side-panel"
+          aria-valuemin={panelWidth.min}
+          aria-valuemax={panelWidth.max}
+          aria-valuenow={layout.width}
+          tabIndex={0}
+          onPointerDown={onResizeStart}
+          onKeyDown={onResizeKey}
+          onDoubleClick={() => resizeTo(panelWidth.initial)}
+          data-testid="panel-resizer"
+        />
+      )}
+      <div className="dock" data-testid="dock">
+        <aside
+          className="side-pane"
+          id="atlas-side-panel"
+          aria-label="학습·근거·메모 패널"
+          hidden={!panelOpen}
+          data-testid="side-pane"
+        >
+          <div
+            className="tab-body"
+            role="tabpanel"
+            id="atlas-tabpanel"
+            aria-labelledby={`tab-${tab}`}
+          >
+            {tab === "learn" && (
+              <LearningPanel spec={figure.spec} selected={selected} onSelect={selectSemantic} />
+            )}
+            {tab === "evidence" && <EvidencePanel figure={figure} selected={selected} />}
+            {tab === "notes" && (
+              <NotesPanel
+                project={project}
+                artifact={artifact}
+                spec={figure.spec}
+                notes={notes}
+                selected={selected}
+                drafts={noteDrafts}
+                onDraft={onNoteDraft}
+                onSaved={onNoteSaved}
+              />
+            )}
+          </div>
+        </aside>
+        <div
+          className="dock-rail"
+          role="tablist"
+          aria-label="패널"
+          aria-orientation={compact ? "horizontal" : "vertical"}
+        >
           {tabs.map((item) => (
             <button
               key={item.id}
+              id={`tab-${item.id}`}
               type="button"
               role="tab"
-              aria-selected={tab === item.id}
-              className={tab === item.id ? "tab active" : "tab"}
-              onClick={() => setTab(item.id)}
+              aria-selected={panelOpen && tab === item.id}
+              aria-controls="atlas-tabpanel"
+              className={panelOpen && tab === item.id ? "rail-tab active" : "rail-tab"}
+              onClick={() => chooseTab(item.id)}
+              title={item.label}
               data-testid={`tab-${item.id}`}
             >
-              {item.label}
+              <Icon name={item.icon} />
+              <span className="rail-label">{item.label}</span>
+              {item.id === "notes" && noteCount > 0 && (
+                <>
+                  <span className="rail-badge" aria-hidden="true">
+                    {noteCount}
+                  </span>
+                  <span className="sr-only">메모 {noteCount}개</span>
+                </>
+              )}
             </button>
           ))}
+          <button
+            type="button"
+            className="rail-toggle"
+            onClick={
+              compact
+                ? () => setLayout((current) => ({ ...current, sheet: nextSheet(current.sheet) }))
+                : togglePanel
+            }
+            aria-label={
+              compact ? sheetLabels[layout.sheet] : panelOpen ? "패널 접기" : "패널 펼치기"
+            }
+            title={
+              compact
+                ? sheetLabels[layout.sheet]
+                : `${panelOpen ? "패널 접기" : "패널 펼치기"} (${modKey}+\\)`
+            }
+            data-testid="rail-toggle"
+          >
+            <Icon name={compact ? "sheet" : panelOpen ? "panel-close" : "panel-open"} />
+          </button>
         </div>
-        <div className="tab-body" role="tabpanel">
-          {tab === "learn" && (
-            <LearningPanel spec={figure.spec} selected={selected} onSelect={selectSemantic} />
-          )}
-          {tab === "evidence" && <EvidencePanel figure={figure} selected={selected} />}
-          {tab === "notes" && (
-            <NotesPanel
-              project={project}
-              artifact={artifact}
-              spec={figure.spec}
-              notes={notes}
-              selected={selected}
-              drafts={noteDrafts}
-              onDraft={onNoteDraft}
-              onSaved={onNoteSaved}
-            />
-          )}
-        </div>
-      </aside>
+      </div>
     </main>
   );
 }

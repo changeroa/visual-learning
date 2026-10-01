@@ -667,6 +667,84 @@ async function main(): Promise<void> {
       question === withoutBackticks(parsedSpec.learning?.question ?? ""),
     );
     await checkInlineCode(tabA, "1440", answer);
+    const dockState = `(() => {
+      const view = document.querySelector('[data-testid="figure-view"]');
+      const host = document.querySelector('[data-testid="excalidraw-host"]').getBoundingClientRect();
+      const side = document.querySelector('[data-testid="side-pane"]');
+      return { panel: view.dataset.panel, host: Math.round(host.width),
+        side: side.hidden ? 0 : Math.round(side.getBoundingClientRect().width),
+        header: getComputedStyle(document.querySelector(".app-header")).display };
+    })()`;
+    type DockState = { panel: string; host: number; side: number; header: string };
+    const dockOpen = await tabA.evaluate<DockState>(dockState);
+    const dockClosed = await after(
+      expectDom<DockState>(
+        tabA,
+        "panel collapsed",
+        `() => document.querySelector('[data-testid="figure-view"]').dataset.panel === "closed" && ${dockState}`,
+      ),
+      () => tabA.click('[data-testid="panel-toggle"]'),
+    );
+    check(
+      "1440: folding the panel hides it and gives its width to the canvas",
+      dockOpen.side > 0 &&
+        dockClosed.side === 0 &&
+        dockClosed.host > dockOpen.host + dockOpen.side - 20,
+      `canvas ${dockOpen.host} -> ${dockClosed.host}, panel ${dockOpen.side} -> 0`,
+    );
+    const dockReopened = await after(
+      expectDom<DockState>(
+        tabA,
+        "panel reopened on 근거",
+        `() => document.querySelector('[data-testid="evidence-panel"]') !== null && ${dockState}`,
+      ),
+      () => tabA.click('[data-testid="tab-evidence"]'),
+    );
+    const widened = await after(
+      expectDom<DockState>(
+        tabA,
+        "panel widened by keyboard",
+        `() => { const s = ${dockState}; return s.side >= ${dockReopened.side + 48} && s; }`,
+      ),
+      () =>
+        tabA.evaluate(`(() => {
+          const handle = document.querySelector('[data-testid="panel-resizer"]');
+          handle.focus();
+          for (let i = 0; i < 2; i += 1)
+            handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+          return true;
+        })()`),
+    );
+    const stored = await tabA.evaluate<string>("localStorage.getItem('visual-atlas:panel-layout')");
+    check(
+      "1440: a rail tab reopens the panel; the splitter resizes it by keyboard and the width persists",
+      dockReopened.side > 0 &&
+        widened.side === dockReopened.side + 48 &&
+        stored.includes(`"width":${widened.side}`),
+      `panel ${dockReopened.side} -> ${widened.side}; stored ${stored}`,
+    );
+    const focused = await after(
+      expectDom<DockState>(
+        tabA,
+        "focus mode",
+        `() => { const s = ${dockState}; return s.header === "none" && s; }`,
+      ),
+      () => tabA.click('[data-testid="focus-toggle"]'),
+    );
+    check(
+      "1440: focus mode hides the header and the dock, leaving the toolbar and canvas",
+      focused.header === "none" && focused.host >= 1400,
+      `canvas ${focused.host}px wide, header ${focused.header}`,
+    );
+    await shot(tabA, "11b-focus-1440");
+    await after(
+      expectDom(
+        tabA,
+        "focus mode off",
+        `() => getComputedStyle(document.querySelector(".app-header")).display !== "none"`,
+      ),
+      () => tabA.click('[data-testid="focus-toggle"]'),
+    );
     const viewState = await tabA.evaluate<{ viewMode: boolean; assetPath: string }>(
       `({ viewMode: window.visualAtlasEditor.getAppState().viewModeEnabled,
           assetPath: window.EXCALIDRAW_ASSET_PATH })`,
@@ -1143,7 +1221,23 @@ async function main(): Promise<void> {
     await checkFitAll(mobile, 390);
     await shot(mobile, "13b-fit-all-390");
     await checkReset(mobile, 390, mobileView);
-    await mobile.scrollTo('[data-testid="learning-panel"]', { block: "start" });
+    const sheetBefore = await mobile.evaluate<string>(
+      `document.querySelector('[data-testid="figure-view"]').dataset.sheet`,
+    );
+    await after(
+      expectDom(
+        mobile,
+        "learning panel in the bottom sheet",
+        `() => document.querySelector('[data-testid="learning-panel"]') !== null &&
+          document.querySelector('[data-testid="figure-view"]').dataset.sheet === "half"`,
+      ),
+      () => mobile.click('[data-testid="tab-learn"]'),
+    );
+    check(
+      "390: the panel starts folded as a bottom sheet and 학습 raises it to half height",
+      sheetBefore === "peek",
+      `sheet ${sheetBefore} -> half`,
+    );
     await checkInlineCode(mobile, "390", answer);
     await shot(mobile, "14-learning-390");
 
