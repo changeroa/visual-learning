@@ -122,11 +122,6 @@ button:disabled {
   color: var(--warn);
 }
 
-.unsaved {
-  color: var(--warn);
-  font-weight: 600;
-}
-
 .card-list,
 .figure-grid {
   list-style: none;
@@ -194,22 +189,11 @@ button:disabled {
   white-space: nowrap;
 }
 
-.toggle {
-  background: var(--paper);
-  color: var(--accent);
-}
-
-.toggle.on {
-  background: var(--accent);
-  color: #fff;
-}
-
 .save-status {
   font-size: 0.88em;
 }
 
-/* Our view controls live in the toolbar, outside the canvas. 처음 보기 / 전체 보기 always show; the
-   -/%/+ steps only where Excalidraw's own zoom control is hidden. */
+/* The -/%/+ steps show only on phones, where Excalidraw has no zoom control of its own. */
 .zoom-group {
   display: flex;
   align-items: center;
@@ -259,128 +243,9 @@ button:disabled {
   inset: 0;
 }
 
-/* Right dock, after Lucidchart's dock and draw.io's format panel: a resizable panel plus an always
-   visible icon rail, so the panel can be folded away without losing the way back. */
-.resizer {
-  flex: none;
-  width: 9px;
-  margin: 0 -4px;
-  position: relative;
-  z-index: 2;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.resizer::before {
-  content: "";
-  position: absolute;
-  inset: 0 4px;
-  background: var(--line);
-}
-
-.resizer:hover::before,
-.resizer:focus-visible::before {
-  inset: 0 3px;
-  background: var(--accent);
-}
-
-.resizer:focus-visible {
-  outline: none;
-}
-
-.dock {
-  flex: none;
-  display: flex;
-  min-height: 0;
-  background: var(--paper);
-}
-
-.side-pane {
-  width: var(--panel-width, 380px);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--paper);
-}
-
-.side-pane[hidden] {
-  display: none;
-}
-
-.split[data-panel="closed"] .dock {
-  border-left: 1px solid var(--line);
-}
-
-.dock-rail {
-  flex: none;
-  width: 56px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  padding: 8px 6px;
-  border-left: 1px solid var(--line);
-  background: var(--wash);
-}
-
-.rail-tab,
-.rail-toggle {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 8px 2px 6px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-}
-
-.rail-tab:hover,
-.rail-toggle:hover {
-  background: rgba(31, 41, 51, 0.06);
-  color: var(--ink);
-}
-
-.rail-tab.active {
-  background: var(--accent-wash);
-  color: var(--accent);
-}
-
-.rail-label {
-  font-size: 11px;
-  line-height: 1;
-  font-weight: 600;
-}
-
-.rail-badge {
-  position: absolute;
-  top: 3px;
-  right: 5px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  line-height: 16px;
-  text-align: center;
-}
-
-.rail-toggle {
-  margin-top: auto;
-}
-
 .icon {
   flex: none;
   display: block;
-}
-
-.view-toggles {
-  display: flex;
-  gap: 4px;
 }
 
 .icon-button {
@@ -409,165 +274,8 @@ button:disabled {
 }
 
 /* Focus mode (Excalidraw's zen mode, Figma's hide-UI): only the toolbar and the canvas remain. */
-body.focus-mode .app-header,
-.split.focus .dock,
-.split.focus .resizer {
+body.focus-mode .app-header {
   display: none;
-}
-
-.tab-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px 32px;
-}
-
-.tab-body h3 {
-  margin: 18px 0 6px;
-  font-size: 1em;
-}
-
-.tab-body h4 {
-  margin: 10px 0 4px;
-  font-size: 0.92em;
-  color: var(--muted);
-}
-
-.question {
-  font-weight: 600;
-}
-
-.route {
-  padding-left: 0;
-  list-style: none;
-}
-
-.route li {
-  margin-bottom: 10px;
-}
-
-.route-step {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
-
-.route-step.active {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
-
-.route-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.6em;
-  height: 1.6em;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.85em;
-}
-
-.route p {
-  margin: 4px 0 0 8px;
-}
-
-.glossary div {
-  margin-bottom: 6px;
-}
-
-.glossary dd {
-  margin: 0 0 0 12px;
-}
-
-.checks .check-answer {
-  background: var(--accent-wash);
-  padding: 6px 8px;
-  border-radius: 6px;
-}
-
-.analogy {
-  border-left: 3px solid var(--line);
-  padding-left: 10px;
-  margin-bottom: 12px;
-}
-
-.claims,
-.verify-list,
-.orphaned {
-  list-style: none;
-  padding: 0;
-}
-
-.claim,
-.verify,
-.orphaned li {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-}
-
-.claim.active {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
-
-.status {
-  font-size: 0.88em;
-}
-
-.status-fact {
-  color: var(--ok);
-}
-
-.status-inference {
-  color: var(--accent);
-}
-
-.status-question {
-  color: var(--warn);
-}
-
-.evidence {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
-.note-editor textarea {
-  width: 100%;
-  font: inherit;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px;
-  resize: vertical;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.note-conflict {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: var(--warn-wash);
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-}
-
-.compare {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
 }
 
 @media (max-width: 900px) {
@@ -575,78 +283,7 @@ body.focus-mode .app-header,
     height: 100dvh;
   }
 
-  .split {
-    flex-direction: column;
-  }
-
-  /* Bottom sheet: the canvas keeps the screen; the panel rises over three snap heights. */
-  .dock {
-    flex-direction: column-reverse;
-    border-top: 1px solid var(--line);
-  }
-
-  .split[data-panel="closed"] .dock {
-    border-left: none;
-  }
-
-  .side-pane {
-    width: auto;
-  }
-
-  .split[data-sheet="half"] .side-pane {
-    height: 45dvh;
-  }
-
-  .split[data-sheet="full"] .side-pane {
-    height: 78dvh;
-  }
-
-  .dock-rail {
-    width: auto;
-    flex-direction: row;
-    align-items: center;
-    padding: 6px 8px;
-    border-left: none;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .rail-tab {
-    flex: 1;
-    flex-direction: row;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 4px;
-  }
-
-  .rail-label {
-    font-size: 13px;
-  }
-
-  .rail-badge {
-    position: static;
-  }
-
-  .rail-toggle {
-    margin-top: 0;
-    padding: 8px 10px;
-  }
-
-  .split[data-sheet="full"] .rail-toggle .icon {
-    transform: rotate(180deg);
-  }
-
   .zoom-group .zoom-step {
     display: inline-block;
-  }
-
-  /* In view mode Excalidraw's floating menus would sit on top of the figure; the toolbar's zoom
-     group replaces them. Edit mode keeps Excalidraw's full UI for drawing. */
-  .excalidraw-host.viewing .layer-ui__wrapper,
-  .excalidraw-host.viewing .App-bottom-bar {
-    display: none;
-  }
-
-  .compare {
-    grid-template-columns: 1fr;
   }
 }
