@@ -1,35 +1,29 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { z } from "zod";
 import { optional, parseOptions, required } from "./arguments";
 import { runSpecCommand } from "./cli-spec";
 import { CollisionError, ConflictError, InputError, RuntimeError } from "./errors";
 import { compileInteractiveAuthoringDocument } from "./interactive-authoring-compiler";
 import { interactiveAuthoringJsonSchema } from "./interactive-authoring-schema";
-import { readJson, sha256, writeResult } from "./io";
+import { formatResult, readJson, sha256, writeResult } from "./io";
 import { reviewLearningSpec } from "./learning-review";
+import { bootstrapSample, createSpec, initializeProject, validateSpec } from "./operations";
 import {
-  bootstrapSample,
-  createRenderedSpec,
-  createSpec,
-  initializeProject,
-  openVaultPath,
-  openWorkingArtifact,
-  validateSpec,
-} from "./operations";
-import { preflight } from "./preflight";
+  type Credentials,
+  credentialRedactor,
+  defaultRemote,
+  loadCredentials,
+  publish,
+  pull,
+} from "./remote-client";
 import { parseVisualNoteSpec } from "./schema";
 import { exportSeries } from "./session-export";
-
-const officialCli = "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli";
-const evidenceRoot = join(process.cwd(), ".omo/evidence/agent-visual-learning-vault");
 
 const help = `visual-note 0.1.0
 Usage: visual-note <command> [options]
 
 Commands:
-  preflight  verify the exact vault and live official Excalidraw runtime
   init       initialize project metadata from a read-only local source
   bootstrap  stage a repeatable study-workflow sample bundle for a source
   create     validate and publish a new normalized visual-note spec
@@ -40,30 +34,113 @@ Commands:
   authoring-schema  emit the renderer-independent interactive authoring JSON Schema
   compile-authoring validate and compile before/after authoring JSON for a web renderer
   review-learning check a spec's learning layer against research-backed figure rules
-  open       open a vault-relative artifact through the official CLI
   restore    validate a restore spec contract without mutation
   contract   emit the deterministic cross-agent contract sentinel
+  publish    upload a project to the private hosted atlas
+             --root <abs> --project <slug> [--artifact <id>]... [--repo-root <abs>] [--remote <url>]
+  pull       download a project from the hosted atlas without overwriting local changes
+             --project <slug> --out <abs-dir> [--remote <url>]
+
+publish/pull read CF-Access-Client-Id/Secret from VISUAL_ATLAS_CLIENT_ID and
+VISUAL_ATLAS_CLIENT_SECRET or ~/.config/visual-atlas/credentials.json (mode 0600).
+The default remote is ${defaultRemote}.
 `;
 
-function run(command: string, argv: readonly string[]): void {
-  switch (command) {
-    case "preflight": {
-      const options = parseOptions(argv, new Set(["--obsidian-cli", "--expected-vault"]));
-      writeResult(
-        preflight(required(options, "--obsidian-cli"), required(options, "--expected-vault")),
-        options.json,
+function takeRepeated(argv: readonly string[], flag: string): [string[], string[]] {
+  const values: string[] = [];
+  const rest: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === undefined) continue;
+    if (argument !== flag) {
+      rest.push(argument);
+      continue;
+    }
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith("--"))
+      throw new InputError(`${flag} requires a value`);
+    values.push(value);
+    index += 1;
+  }
+  return [values, rest];
+}
+
+// publish and pull install this once credentials load; every later stdout/stderr write,
+// including error reports, passes through it.
+let redact: ((text: string) => string) | null = null;
+
+function scrub(text: string): string {
+  return redact === null ? text : redact(text);
+}
+
+function remoteCredentials(): Credentials {
+  const credentials = loadCredentials(process.env);
+  redact = credentialRedactor(credentials);
+  return credentials;
+}
+
+async function runPublish(argv: readonly string[]): Promise<void> {
+  const [artifacts, rest] = takeRepeated(argv, "--artifact");
+  const options = parseOptions(rest, new Set(["--root", "--project", "--repo-root", "--remote"]));
+  const repoRoot = optional(options, "--repo-root");
+  const credentials = remoteCredentials();
+  const result = await publish({
+    root: required(options, "--root"),
+    project: required(options, "--project"),
+    remote: optional(options, "--remote") ?? defaultRemote,
+    env: process.env,
+    credentials,
+    ...(artifacts.length === 0 ? {} : { artifacts }),
+    ...(repoRoot === undefined ? {} : { repoRoot }),
+  });
+  if (options.json) {
+    process.stdout.write(scrub(formatResult(result, true)));
+  } else {
+    for (const figure of result.results) {
+      const extras = [
+        ...(figure.deprecatedAnchors.length === 0
+          ? []
+          : [`deprecatedAnchors=${figure.deprecatedAnchors.join(",")}`]),
+        ...(figure.orphanedNotes.length === 0
+          ? []
+          : [`orphanedNotes=${figure.orphanedNotes.join(",")}`]),
+      ];
+      process.stdout.write(
+        scrub(`${[figure.outcome, figure.artifactId, figure.token, ...extras].join(" ")}\n`),
       );
+    }
+  }
+  const conflicts = result.results.filter((figure) => figure.outcome === "conflict");
+  if (conflicts.length > 0) {
+    throw new ConflictError(
+      `publish conflict for ${conflicts.map((figure) => figure.artifactId).join(", ")}`,
+    );
+  }
+}
+
+async function run(command: string, argv: readonly string[]): Promise<void> {
+  switch (command) {
+    case "publish":
+      await runPublish(argv);
+      return;
+    case "pull": {
+      const options = parseOptions(argv, new Set(["--project", "--out", "--remote"]));
+      const credentials = remoteCredentials();
+      const result = await pull({
+        project: required(options, "--project"),
+        out: required(options, "--out"),
+        remote: optional(options, "--remote") ?? defaultRemote,
+        env: process.env,
+        credentials,
+      });
+      process.stdout.write(scrub(formatResult(result, options.json)));
       return;
     }
     case "init": {
-      const options = parseOptions(
-        argv,
-        new Set(["--vault", "--expected-vault", "--project", "--source"]),
-      );
+      const options = parseOptions(argv, new Set(["--root", "--project", "--source"]));
       writeResult(
         initializeProject({
-          vault: required(options, "--vault"),
-          expectedVault: required(options, "--expected-vault"),
+          root: required(options, "--root"),
           project: required(options, "--project"),
           source: required(options, "--source"),
         }),
@@ -72,15 +149,11 @@ function run(command: string, argv: readonly string[]): void {
       return;
     }
     case "bootstrap": {
-      const options = parseOptions(
-        argv,
-        new Set(["--vault", "--expected-vault", "--project", "--source", "--bundle"]),
-      );
+      const options = parseOptions(argv, new Set(["--root", "--project", "--source", "--bundle"]));
       const bundlePath = optional(options, "--bundle");
       writeResult(
         bootstrapSample({
-          vault: required(options, "--vault"),
-          expectedVault: required(options, "--expected-vault"),
+          root: required(options, "--root"),
           project: required(options, "--project"),
           source: required(options, "--source"),
           ...(bundlePath === undefined ? {} : { bundlePath }),
@@ -90,42 +163,15 @@ function run(command: string, argv: readonly string[]): void {
       return;
     }
     case "create": {
-      const options = parseOptions(
-        argv,
-        new Set([
-          "--vault",
-          "--expected-vault",
-          "--verified-vault-id",
-          "--project",
-          "--spec",
-          "--obsidian-cli",
-          "--runtime-receipt",
-          "--plugin-receipt",
-          "--assert-no-write",
-        ]),
-        new Set(["--assert-no-write"]),
+      const options = parseOptions(argv, new Set(["--root", "--project", "--spec"]));
+      writeResult(
+        createSpec({
+          root: required(options, "--root"),
+          project: required(options, "--project"),
+          specPath: required(options, "--spec"),
+        }),
+        options.json,
       );
-      const common = {
-        vault: required(options, "--vault"),
-        expectedVault: required(options, "--expected-vault"),
-        project: required(options, "--project"),
-        specPath: required(options, "--spec"),
-      } as const;
-      const verifiedVaultId = optional(options, "--verified-vault-id");
-      const result =
-        verifiedVaultId === undefined
-          ? createSpec(common)
-          : createRenderedSpec({
-              ...common,
-              verifiedVaultId,
-              cli: optional(options, "--obsidian-cli") ?? officialCli,
-              runtimeReceipt:
-                optional(options, "--runtime-receipt") ?? `${evidenceRoot}/task-2-preflight.json`,
-              pluginReceipt:
-                optional(options, "--plugin-receipt") ??
-                `${evidenceRoot}/task-2-plugin-install.json`,
-            });
-      writeResult(result, options.json);
       return;
     }
     case "export-series": {
@@ -177,37 +223,6 @@ function run(command: string, argv: readonly string[]): void {
       );
       return;
     }
-    case "open": {
-      const options = parseOptions(
-        argv,
-        new Set([
-          "--obsidian-cli",
-          "--vault",
-          "--expected-vault",
-          "--path",
-          "--project",
-          "--artifact-id",
-        ]),
-      );
-      const path = optional(options, "--path");
-      writeResult(
-        path !== undefined
-          ? openVaultPath(
-              required(options, "--obsidian-cli"),
-              required(options, "--expected-vault"),
-              path,
-            )
-          : openWorkingArtifact(
-              required(options, "--obsidian-cli"),
-              required(options, "--vault"),
-              required(options, "--expected-vault"),
-              required(options, "--project"),
-              required(options, "--artifact-id"),
-            ),
-        options.json,
-      );
-      return;
-    }
     case "contract": {
       const options = parseOptions(argv, new Set(["--fixture"]));
       const fixture = required(options, "--fixture");
@@ -231,7 +246,7 @@ function run(command: string, argv: readonly string[]): void {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const argv = Bun.argv.slice(2);
   const first = argv[0];
   if (first === "--help" || first === "-h") {
@@ -240,18 +255,18 @@ function main(): void {
     return;
   }
   if (first === undefined) throw new InputError("a command is required; use --help");
-  run(first, argv.slice(1));
+  await run(first, argv.slice(1));
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   if (error instanceof CollisionError || error instanceof ConflictError) {
-    process.stderr.write(`visual-note: ${error.message}\n`);
+    process.stderr.write(scrub(`visual-note: ${error.message}\n`));
     process.exit(3);
   }
   if (error instanceof RuntimeError) {
-    process.stderr.write(`visual-note: ${error.message}\n`);
+    process.stderr.write(scrub(`visual-note: ${error.message}\n`));
     process.exit(4);
   }
   if (
@@ -260,8 +275,14 @@ try {
     error instanceof SyntaxError ||
     error instanceof TypeError
   ) {
-    process.stderr.write(`visual-note: ${error.message}\n`);
+    process.stderr.write(scrub(`visual-note: ${error.message}\n`));
     process.exit(2);
+  }
+  if (redact !== null) {
+    // An uncaught error would print unredacted; report it through the redactor instead.
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    process.stderr.write(scrub(`visual-note: unexpected error: ${detail}\n`));
+    process.exit(1);
   }
   throw error;
 }

@@ -17,14 +17,14 @@ function kindLink(project: string, spec: VisualNoteSpec): string {
 }
 
 export function writeProjectNotes(
-  vault: string,
+  root: string,
   project: string,
   source: { readonly root: string; readonly commit: string | null },
   specs: readonly VisualNoteSpec[],
   restoreArtifactId: string,
 ): void {
   const commit = source.commit ?? "null";
-  const base = join(vault, "Engineering Atlas/10 Projects", project);
+  const base = join(root, "Engineering Atlas/10 Projects", project);
   const byKind = new Map(specs.map((spec) => [spec.kind, kindLink(project, spec)]));
   const files = new Map<string, string>([
     [
@@ -103,8 +103,8 @@ Workflow와 sequence 관찰을 이어서 읽습니다.`,
       note(
         { atlas_type: "study-note", status: "active", project },
         "Prompt Recipes",
-        `- 프로젝트 맵: \`$SKILL/bin/visual-note bootstrap --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json\`
-- 특정 artifact 추가: \`$SKILL/bin/visual-note create --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
+        `- 프로젝트 맵: \`$SKILL/bin/visual-note bootstrap --root "$ROOT" --project ${project} --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json\`
+- 특정 artifact 추가: \`$SKILL/bin/visual-note create --root "$ROOT" --project ${project} --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
 - refresh 전 질문: \`어떤 node를 유지하고 어떤 edge를 deprecatedAnchor 없이 지울 수 있는가?\``,
       ),
     ],
@@ -113,8 +113,8 @@ Workflow와 sequence 관찰을 이어서 읽습니다.`,
       note(
         { atlas_type: "study-note", status: "active", project },
         "Create Walkthrough",
-        `1. \`$SKILL/bin/visual-note validate --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
-2. \`$SKILL/bin/visual-note create --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\``,
+        `1. \`$SKILL/bin/visual-note validate --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\`
+2. \`$SKILL/bin/visual-note create --root "$ROOT" --project ${project} --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-create.json" --json\``,
       ),
     ],
     [
@@ -122,7 +122,7 @@ Workflow와 sequence 관찰을 이어서 읽습니다.`,
       note(
         { atlas_type: "study-note", status: "active", project },
         "Extend Walkthrough",
-        `\`$SKILL/bin/visual-note extend --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-extend.json" --json\``,
+        `\`$SKILL/bin/visual-note extend --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-extend.json" --json\``,
       ),
     ],
     [
@@ -130,7 +130,7 @@ Workflow와 sequence 관찰을 이어서 읽습니다.`,
       note(
         { atlas_type: "study-note", status: "active", project },
         "Refresh Walkthrough",
-        `\`$SKILL/bin/visual-note refresh --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --spec "$VAULT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-refresh-v2.json" --expected-token cas-0 --json\``,
+        `\`$SKILL/bin/visual-note refresh --root "$ROOT" --project ${project} --spec "$ROOT/Engineering Atlas/10 Projects/${project}/_assets/walkthrough-refresh-v2.json" --expected-token cas-0 --json\``,
       ),
     ],
     [
@@ -138,7 +138,7 @@ Workflow와 sequence 관찰을 이어서 읽습니다.`,
       note(
         { atlas_type: "study-note", status: "active", project },
         "Restore Walkthrough",
-        `\`$SKILL/bin/visual-note restore --vault "$VAULT" --expected-vault "$VAULT" --project ${project} --artifact-id ${restoreArtifactId} --revision-token cas-0 --expected-token cas-1 --json\``,
+        `\`$SKILL/bin/visual-note restore --root "$ROOT" --project ${project} --artifact-id ${restoreArtifactId} --revision-token cas-0 --expected-token cas-1 --json\``,
       ),
     ],
     [
@@ -162,7 +162,7 @@ Workflow와 sequence 관찰을 이어서 읽습니다.`,
 - path swap: symlink 또는 ancestor swap이 감지되면 다시 bootstrap 합니다.
 - repo dirty: Git source는 clean status에서만 revision을 기록합니다.
 - stale token: \`STATE\`의 최신 token을 다시 읽고 retry 합니다.
-- wrong vault: \`--vault\` 와 \`--expected-vault\` 를 동일하게 맞춥니다.`,
+- wrong root: \`--root\`가 기존 실제 디렉터리를 가리키는지 확인합니다.`,
       ),
     ],
   ]);

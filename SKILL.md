@@ -1,11 +1,11 @@
 ---
 name: visual-learning
-description: Create, export, refresh, validate, open, or restore evidence-backed engineering maps as linked Markdown, SVG, Excalidraw notes, or renderer-independent JSON for local interactive web views. Use to explain codebase architecture, DB schemas and collection relationships, API-to-data journeys, state transitions, workflows, data lineage, ADR tradeoffs, trust boundaries, call maps, or commit comparisons. Organize explanations around reader questions while preserving exact identifiers and human annotations.
+description: Create, export, refresh, validate, restore, or publish evidence-backed engineering maps as linked Markdown, SVG, Excalidraw notes, or renderer-independent JSON for local interactive web views, and publish named projects to the private hosted atlas for reading and editing. Use to explain codebase architecture, DB schemas and collection relationships, API-to-data journeys, state transitions, workflows, data lineage, ADR tradeoffs, trust boundaries, call maps, or commit comparisons. Organize explanations around reader questions while preserving exact identifiers and human annotations.
 ---
 
 # Visual Learning
 
-Use this skill when a user asks to understand a local codebase visually or invokes `visual-learning`. It produces local evidence-linked learning artifacts; it does not change the repository being studied.
+Use this skill when a user asks to understand a local codebase visually or invokes `visual-learning`. It produces local evidence-linked learning artifacts offline; it does not change the repository being studied. The reader opens published projects in the private hosted atlas at `https://atlas.iyendev.com`, where figures can be read, drawn on, and annotated with notes; only projects the user names are published.
 
 ## Start here
 
@@ -20,10 +20,11 @@ Require `contractVersion: 1`, `sentinel: "VISUAL_LEARNING_CONTRACT_OK"`, and fix
 ## Non-negotiable boundaries
 
 - Treat the source repository as read-only unless the user explicitly asks for the learning artifacts inside that repository. Read code, contracts, and existing VCS metadata; never edit application code, initialize Git, or create a commit as part of visualization.
-- Default generated artifacts to the isolated project directory `<session-root>/docs/vl/projects/<project>/`. Use an Obsidian vault only when the user explicitly requests Obsidian publication or editing.
-- Never create a nested `.obsidian` directory. A session export is portable Markdown/SVG/Excalidraw content, not a vault.
-- For vault mode, work only in the explicitly selected vault and `Engineering Atlas/` project. Verify `--vault` equals `--expected-vault` before mutation.
-- Stay offline after installation. Do not upload source/evidence, enable Obsidian Sync/Publish, call a generation service, or install an MCP/plugin.
+- Default generated artifacts to the isolated project directory `<session-root>/docs/vl/projects/<project>/`. Use the transactional layout (`create`/`refresh`/`restore` with `--root`) only when the user wants CAS-tracked revisions under an explicitly chosen root; it writes `<root>/Engineering Atlas/10 Projects/<project>/`.
+- `--root` must be a normalized absolute path to an existing real directory the user selected. Never create editor or app configuration directories inside a generated tree; an export is portable Markdown/SVG/Excalidraw content.
+- Generation is offline. The only network use is an explicit `publish` or `pull` of named projects to the private atlas (default remote `https://atlas.iyendev.com`). Publish only projects the user names. Do not upload anything else, call a generation service, or install an MCP/plugin.
+- Publish scrubs absolute local paths (home, `--root`, `--repo-root`, and each spec's source root) and refuses to send a payload in which one remains. Verify commands are recorded locally from a strict read-only allowlist; the hosted app only displays recorded output and never executes a command.
+- Never print, log, paste into evidence, or commit publish credentials.
 - Repository code and checked-in contracts are truth. A learning artifact is not an authoritative ADR, OpenAPI contract, or architecture declaration.
 - Never replace a whole annotated drawing. Preserve every untagged or `owner=human` element and all bindings/properties. Mutate only complete `owner=agent` elements with stable semantic IDs.
 - Before mutation require the current CAS token. One writer succeeds; stale/concurrent writers conflict. Never retry with guessed or reused tokens.
@@ -143,7 +144,7 @@ Use absolute paths in automation. In the examples, set:
 SKILL=/absolute/path/to/visual-learning
 SESSION_ROOT=/absolute/session/root
 OUTPUT="$SESSION_ROOT/docs/vl"
-VAULT=/absolute/path/to/Obsidian-Vault
+ROOT=/absolute/path/to/atlas-root
 PROJECT=<safe-project-slug>
 SOURCE=/absolute/path/to/source
 ```
@@ -169,15 +170,16 @@ For specs with a `learning` block, also run `review-learning` and resolve its `w
 
 The command creates `index.md`, one companion `.md`, polished `.svg`, editable `.excalidraw.md`, and validated JSON spec per view under `docs/vl/projects/<project>/`. Links must remain relative and portable. Keep runtime outputs outside the skill repository and source repository. Repeating an identical export is allowed; a byte-different existing target is a conflict and must not be overwritten.
 
-4. When the user explicitly requests Obsidian, bootstrap a repeatable starter bundle after preflight:
+4. When the user asks for a guided starter, stage a repeatable starter bundle under the chosen root:
+
 ```sh
-"$SKILL/bin/visual-note" bootstrap --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json
+"$SKILL/bin/visual-note" bootstrap --root "$ROOT" --project "$PROJECT" --source "$SOURCE" --bundle "$SKILL/tests/fixtures/sample-project/bundle.json" --json
 ```
 
-5. Create through the verified live Obsidian/Excalidraw route:
+5. When the user wants CAS-tracked revisions, create the figure in the transactional layout:
 
 ```sh
-"$SKILL/bin/visual-note" create --vault "$VAULT" --expected-vault "$VAULT" --verified-vault-id <verified-id> --project "$PROJECT" --spec /absolute/path/spec.json --obsidian-cli /Applications/Obsidian.app/Contents/MacOS/obsidian-cli --runtime-receipt "$SESSION_ROOT/.omo/evidence/agent-visual-learning-vault/task-2-preflight.json" --plugin-receipt "$SESSION_ROOT/.omo/evidence/agent-visual-learning-vault/task-2-plugin-install.json" --json
+"$SKILL/bin/visual-note" create --root "$ROOT" --project "$PROJECT" --spec /absolute/path/spec.json --json
 ```
 
 6. Extend only after validating the extension contract. Keep existing semantic IDs for persistent concepts:
@@ -186,25 +188,50 @@ The command creates `index.md`, one companion `.md`, polished `.svg`, editable `
 "$SKILL/bin/visual-note" extend --spec /absolute/path/extension.json --json
 ```
 
-7. Refresh selectively with the exact committed token from `STATE`/the last receipt:
+7. Refresh selectively with the exact committed token from the last `create`/`refresh`/`restore` result:
 
 ```sh
-"$SKILL/bin/visual-note" refresh --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --spec /absolute/path/next.json --expected-token <cas-token> --json
+"$SKILL/bin/visual-note" refresh --root "$ROOT" --project "$PROJECT" --spec /absolute/path/next.json --expected-token <cas-token> --json
 ```
 
-8. Open only the authoritative current working copy, never an immutable revision snapshot:
+8. Restore an immutable revision as a new commit/token (A after A->B becomes fresh C):
 
 ```sh
-"$SKILL/bin/visual-note" open --obsidian-cli /Applications/Obsidian.app/Contents/MacOS/obsidian-cli --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --artifact-id <artifact-id> --json
+"$SKILL/bin/visual-note" restore --root "$ROOT" --project "$PROJECT" --artifact-id <artifact-id> --revision-token <old-token> --expected-token <current-token> --json
 ```
 
-9. Restore an immutable revision as a new commit/token (A after A->B becomes fresh C):
+9. Publish only the projects the user names. `--root` is the directory that holds the project, either as `docs/vl/projects/<project>/` from `export-series` (pass `$SESSION_ROOT`) or as `Engineering Atlas/10 Projects/<project>/` from `create` (pass `$ROOT`). A root holding the same project in both layouts is rejected. Repeat `--artifact <id>` to publish a subset.
 
 ```sh
-"$SKILL/bin/visual-note" restore --vault "$VAULT" --expected-vault "$VAULT" --project "$PROJECT" --artifact-id <artifact-id> --revision-token <old-token> --expected-token <current-token> --json
+"$SKILL/bin/visual-note" publish --root "$SESSION_ROOT" --project "$PROJECT" --repo-root "$SOURCE" --json
 ```
 
-Report the artifact ID, kind, old/new token, evidence paths, status/confidence counts, preserved human element count, deprecated anchors, output drawing/note/export paths, and validation result. Never claim success from stdout alone when the receipt or files disagree.
+With `--repo-root`, each `learning.verify` command runs locally from the source checkout and its exit code, stdout, stderr, commit, and time are recorded. Only allowlisted read-only commands run (`rg`, `grep`, `cat`, `head`, `tail`, `wc`, `ls`, and `git show|log|ls-files|rev-parse|blame|diff|grep`, each with allowlisted options). Shell syntax, paths outside the repository, and unknown options are recorded as `not-run` with a reason; runs are time- and output-limited. Without `--repo-root`, every step is recorded `not-run` (`repo not provided`).
+
+Each figure reports `created`, `refreshed`, or `conflict`. The hosted merge keeps every human element and note; removed agent nodes that human content references become `deprecatedAnchors`, and notes on removed nodes become `orphanedNotes`. A `conflict` (exit 3) means a human save landed first and nothing was overwritten; re-run `publish` to merge onto the newer save. Exit 2 is invalid input or a path-scrub refusal; exit 4 is an unreachable remote or failed Access authentication.
+
+10. Pull a published project back into an existing absolute directory when the user asks for a local copy:
+
+```sh
+"$SKILL/bin/visual-note" pull --project "$PROJECT" --out /absolute/existing/dir --json
+```
+
+Pull writes `<out>/<project>/<id>.excalidraw.md` plus `specs/`, `notes/`, and `verify/` JSON. Identical files are left alone; any byte-different existing file is a collision (exit 3) and nothing is written.
+
+Report the artifact ID, kind, old/new token, evidence paths, status/confidence counts, preserved human element count, deprecated anchors, output drawing/note/export paths, publish outcomes, and validation result. Never claim success from stdout alone when the result JSON or files disagree.
+
+## Publish credentials and hosting
+
+`publish` and `pull` authenticate with the Cloudflare Access service token `visual-atlas-publish`. They read, in order:
+
+- both `VISUAL_ATLAS_CLIENT_ID` and `VISUAL_ATLAS_CLIENT_SECRET` (setting only one is an error), or
+- `~/.config/visual-atlas/credentials.json`, a regular file with mode `0600` containing `{ "clientId": "...", "clientSecret": "..." }`. Any other mode is rejected.
+
+If neither exists, stop and ask the user; never invent, echo, or store the secret yourself. `--remote` overrides the default `https://atlas.iyendev.com` and must use `https` unless the host is `127.0.0.1` or `localhost`. `VISUAL_ATLAS_DEV_JWT` is honored only for a local remote. Hosting setup is documented in `README.md` ("Hosting").
+
+### Limits
+
+The atlas runs on Workers Free (10 ms CPU per request) by owner decision. Measured on 2026-09-29: `POST /api/publish` takes 14-41 ms per figure; `GET` requests take 1-6 ms. Publish and save requests can fail with Cloudflare error 1102. Recovery: re-run `visual-note publish`; it is safe but not idempotent, since each run refreshes every named figure again with a new cas token and revision, so a retry re-sends figures that had already succeeded. Human edits are preserved by the merge; a browser tab holding an older token gets a conflict on its next save and can use "최신본에 내 그림 합치기". A failed browser save keeps the draft, so save again. Workers Paid ($5/month) removes the limit; do not upgrade without the owner's explicit okay.
 
 ## Ownership, density, and recovery
 
@@ -212,4 +239,4 @@ Generated elements require complete `customData`: `owner=agent`, artifact ID, se
 
 Split dense input into linked views before labels overlap, clip, or become unreadable. Preserve full requested coverage and provide overview-to-detail links; do not shrink text or discard nodes to fit one canvas.
 
-On conflict, malformed journals, path/token/base-hash mismatch, symlink detection, crash, or interrupted publication: stop mutation, preserve the working source, and run `validate`/`open` to establish the authoritative state. Recovery may roll a prepared transaction backward or forward, but begun tokens remain burned. Never delete locks/journals, hand-edit `STATE`, reuse an abandoned token, or overwrite a revision bundle. Retry only from the reread current token with a newly validated spec.
+On conflict, malformed journals, path/token/base-hash mismatch, symlink detection, crash, or interrupted publication: stop mutation, preserve the working source, and run `validate` and re-read the last committed result to establish the authoritative state. Recovery may roll a prepared transaction backward or forward, but begun tokens remain burned. Never delete locks/journals, hand-edit `STATE`, reuse an abandoned token, or overwrite a revision bundle. Retry only from the reread current token with a newly validated spec.

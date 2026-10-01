@@ -1,0 +1,464 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "vl-01-architecture",
+  "kind": "system-architecture",
+  "revision": 1,
+  "title": "visual-note 한 번의 호출이 파일이 되기까지",
+  "source": {
+    "root": "/Users/victor/projects/visual-learning",
+    "commit": "d6495cd8a82322d5c7220e8c7ea92a2dabe4128d"
+  },
+  "presentation": {
+    "layout": "components",
+    "direction": "left-to-right",
+    "columns": 2,
+    "frames": [
+      {
+        "id": "entry",
+        "label": "진입",
+        "category": "external",
+        "order": 0
+      },
+      {
+        "id": "assemble",
+        "label": "조립과 검증",
+        "category": "runtime",
+        "order": 1
+      },
+      {
+        "id": "publish",
+        "label": "게시",
+        "category": "data",
+        "order": 2
+      }
+    ]
+  },
+  "learning": {
+    "question": "visual-note export-series는 스펙을 어떻게 검증하고 어디에 게시하는가?",
+    "answer": "bin/visual-note는 Bun으로 src/cli.ts를 실행한다. `export-series`는 `exportSeries`를 호출해 스펙 JSON과 fact 근거를 검사한다. 검증한 스펙으로 SVG 미리보기와 Excalidraw Markdown을 만들고, `publishProjectDirectory`가 `<session-root>/docs/vl/projects/<project>`에 게시한다. `bundle-transaction`과 `safe-path`는 이 호출 경로에 포함되지 않는다.",
+    "route": [
+      {
+        "semanticId": "visual-note-cli",
+        "explanation": "셸 엔트리포인트가 Bun으로 `src/cli.ts`를 실행한다. 호출이 애플리케이션 코드에 들어오는 시작점이다."
+      },
+      {
+        "semanticId": "cli-dispatch",
+        "explanation": "`run`의 `export-series` 분기가 옵션을 읽어 `exportSeries`를 호출한다. CLI 명령에서 내보내기 경로로 넘어가는 경계다."
+      },
+      {
+        "semanticId": "session-export",
+        "explanation": "`exportSeries`가 프로젝트와 입력 디렉터리를 검사하고 스펙을 읽어 출력 파일을 스테이징한다. 내보내기 흐름을 묶는 함수다."
+      },
+      {
+        "semanticId": "schema-validation",
+        "explanation": "`parseVisualNoteSpec`가 스펙 구조, ID 연결, fact의 evidence 요구를 검사한다. export는 fact evidence를 source에 대해 해석한다. 검증을 통과한 스펙만 다음 단계에서 사용한다."
+      },
+      {
+        "semanticId": "rendering",
+        "explanation": "`planScene`을 바탕으로 SVG를 그린다. `sceneFromSpec`이 Excalidraw scene을 만들고 `encodeSceneToMarkdown`이 압축된 Markdown 파일로 표현한다. 사용자용 미리보기와 편집 원본을 만드는 단계다."
+      },
+      {
+        "semanticId": "project-publication",
+        "explanation": "`publishProjectDirectory`는 스테이징 디렉터리를 목표 위치로 rename한다. 목표가 이미 있으면 내용이 같은지 비교한다. 결과물 게시와 충돌 판정을 담당한다."
+      },
+      {
+        "semanticId": "output-location",
+        "explanation": "`targetProject`는 `<session-root>/docs/vl/projects/<project>`로 정해진다. 이 경로는 `export-series` 결과의 `outputRoot`로 반환된다."
+      }
+    ],
+    "glossary": [
+      {
+        "term": "parseVisualNoteSpec",
+        "meaning": "입력 객체를 VisualNoteSpec 스키마로 파싱하고 검증하는 함수다."
+      },
+      {
+        "term": "planScene",
+        "meaning": "스펙의 노드와 엣지를 배치해 Excalidraw 요소 계획을 생성하는 함수다."
+      },
+      {
+        "term": "renderViewSvg",
+        "meaning": "한 뷰의 요소 계획을 SVG 미리보기 문자열로 만드는 함수다."
+      },
+      {
+        "term": "sceneFromSpec",
+        "meaning": "스펙을 Excalidraw scene 데이터로 변환하는 함수다."
+      },
+      {
+        "term": "publishProjectDirectory",
+        "meaning": "스테이징 프로젝트 디렉터리를 목적 경로에 게시하거나 기존 내용과 비교하는 함수다."
+      }
+    ],
+    "scope": {
+      "covers": [
+        "bin/visual-note부터 `export-series` dispatch, 스펙 검증, SVG 및 Excalidraw Markdown 생성, 프로젝트 디렉터리 게시까지 다룬다.",
+        "export-series의 게시 위치인 `<session-root>/docs/vl/projects/<project>`를 다룬다."
+      ],
+      "omits": [
+        "`create` 명령의 대안 경로인 `createRenderedSpec`에서 `renderer-live`와 the former desktop note app의 Script Engine으로 실제 vault에 렌더링하는 흐름은 다루지 않는다.",
+        "`renderer-live`의 플러그인·런타임 receipt 검증, vault 확인, renderer 실행 결과 검증은 다루지 않는다.",
+        "`bundle-transaction`의 JSON·PNG 쌍 원자 게시와 저널 기반 복구 흐름은 다루지 않는다.",
+        "`safe-path`를 사용하는 `init` 및 `createSpec`의 vault 내 파일 작성 경로는 다루지 않는다.",
+        "개별 결과물의 전체 Markdown 노트 본문, manifest hash 산출 세부사항과 SVG 스타일 세부사항은 다루지 않는다."
+      ]
+    },
+    "verify": [
+      {
+        "semanticId": "visual-note-cli",
+        "how": "셸 엔트리포인트가 CLI 소스를 Bun으로 실행하는 줄을 확인한다.",
+        "command": "grep -n 'exec bun' bin/visual-note"
+      },
+      {
+        "semanticId": "cli-dispatch",
+        "how": "`export-series` case가 `exportSeries`에 인자를 넘기는 부분을 확인한다.",
+        "command": "grep -n -A 10 'case \"export-series\"' src/cli.ts"
+      },
+      {
+        "semanticId": "schema-validation",
+        "how": "export 단계의 파서 호출과 fact evidence 해석을 확인한다.",
+        "command": "grep -n -A 9 'parseVisualNoteSpec(JSON.parse' src/session-export.ts"
+      },
+      {
+        "semanticId": "output-location",
+        "how": "session-root 아래 게시 대상 경로와 호출을 확인한다.",
+        "command": "grep -n -A 3 'const targetProject' src/session-export.ts"
+      }
+    ],
+    "checks": [
+      {
+        "prompt": "`export-series`는 `create`의 live renderer 경로를 사용하는가?",
+        "answer": "아니다. CLI의 `export-series` case는 `exportSeries`를 호출하며, 이 함수는 `renderViewSvg`와 `sceneFromSpec`을 사용한다. `createRenderedSpec`이 호출하는 `renderLive`는 별도 경로다."
+      },
+      {
+        "prompt": "`<vault>/Engineering Atlas/10 Projects`는 이 경로의 게시 위치인가?",
+        "answer": "아니다. 이 경로의 `targetProject`는 `<session-root>/docs/vl/projects/<project>`다. `Engineering Atlas/10 Projects`는 `operations.ts`의 vault 작업 경로에서 별도로 사용한다."
+      }
+    ],
+    "analogies": [
+      {
+        "analogy": "검증된 설계도에서 미리보기와 편집 원본을 만들고 완성된 프로젝트 폴더를 목표 디렉터리에 옮기는 출판 조립 라인이다.",
+        "holds": [
+          "스펙 검증이 파일 생성보다 앞선다.",
+          "SVG와 Excalidraw Markdown은 같은 검증된 스펙에서 만들어진다.",
+          "스테이징 디렉터리는 프로젝트 단위로 목표 위치에 게시된다."
+        ],
+        "breaks": [
+          "이 흐름은 항상 성공하는 단순한 라인이 아니다. 기존 목표가 있으면 동일성을 비교하거나 충돌을 판정한다.",
+          "`export-series`의 게시 대상은 the former desktop note app의 vault가 아니라 전달된 session root 아래다."
+        ]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "semanticId": "visual-note-cli",
+      "label": "visual-note\n명령 진입",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "bin/visual-note",
+          "lineStart": 2,
+          "lineEnd": 2,
+          "symbol": "exec bun"
+        }
+      ],
+      "visual": {
+        "category": "external",
+        "frameId": "entry",
+        "shape": "rectangle",
+        "emphasis": "primary",
+        "lane": "upstream",
+        "order": 0
+      }
+    },
+    {
+      "semanticId": "cli-dispatch",
+      "label": "run\n명령 분기",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/cli.ts",
+          "lineStart": 131,
+          "lineEnd": 141,
+          "symbol": "case \"export-series\""
+        }
+      ],
+      "visual": {
+        "category": "external",
+        "frameId": "entry",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 1
+      }
+    },
+    {
+      "semanticId": "session-export",
+      "label": "exportSeries\n입출력 조립",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 180,
+          "lineEnd": 204,
+          "symbol": "export function exportSeries"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "assemble",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 2
+      }
+    },
+    {
+      "semanticId": "schema-validation",
+      "label": "parseVisualNoteSpec\n스펙과 증거 검증",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/schema.ts",
+          "lineStart": 161,
+          "lineEnd": 234,
+          "symbol": "visualNoteSpecSchema"
+        },
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 58,
+          "lineEnd": 65,
+          "symbol": "parseVisualNoteSpec"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "assemble",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 3
+      }
+    },
+    {
+      "semanticId": "rendering",
+      "label": "planScene\n배치·SVG·장면",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/renderer-plan.ts",
+          "lineStart": 306,
+          "lineEnd": 328,
+          "symbol": "export function planScene"
+        },
+        {
+          "path": "src/svg-gallery.ts",
+          "lineStart": 187,
+          "lineEnd": 199,
+          "symbol": "export function renderViewSvg"
+        },
+        {
+          "path": "src/scene-bootstrap.ts",
+          "lineStart": 22,
+          "lineEnd": 29,
+          "symbol": "export function sceneFromSpec"
+        },
+        {
+          "path": "src/excalidraw-file.ts",
+          "lineStart": 65,
+          "lineEnd": 66,
+          "symbol": "export function encodeSceneToMarkdown"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "frameId": "assemble",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 4
+      }
+    },
+    {
+      "semanticId": "project-publication",
+      "label": "publishProjectDirectory\n스테이징 후 게시",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/project-publish.ts",
+          "lineStart": 167,
+          "lineEnd": 190,
+          "symbol": "export function publishProjectDirectory"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "frameId": "publish",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "main",
+        "order": 5
+      }
+    },
+    {
+      "semanticId": "output-location",
+      "label": "docs/vl/projects\n세션 내보내기 위치",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 229,
+          "lineEnd": 236,
+          "symbol": "targetProject"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "frameId": "publish",
+        "shape": "rectangle",
+        "emphasis": "secondary",
+        "lane": "downstream",
+        "order": 6
+      }
+    }
+  ],
+  "edges": [
+    {
+      "semanticId": "cli-enters-dispatch",
+      "label": "전달",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "bin/visual-note",
+          "lineStart": 2,
+          "lineEnd": 2,
+          "symbol": "exec bun"
+        },
+        {
+          "path": "src/cli.ts",
+          "lineStart": 234,
+          "lineEnd": 244,
+          "symbol": "function main"
+        }
+      ],
+      "from": "visual-note-cli",
+      "to": "cli-dispatch",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "dispatch-calls-export",
+      "label": "exportSeries 호출",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/cli.ts",
+          "lineStart": 131,
+          "lineEnd": 141,
+          "symbol": "exportSeries"
+        }
+      ],
+      "from": "cli-dispatch",
+      "to": "session-export",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "export-validates-specs",
+      "label": "스펙 읽고 검증",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 58,
+          "lineEnd": 65,
+          "symbol": "parseVisualNoteSpec"
+        },
+        {
+          "path": "src/schema.ts",
+          "lineStart": 233,
+          "lineEnd": 235,
+          "symbol": "parseVisualNoteSpec"
+        }
+      ],
+      "from": "session-export",
+      "to": "schema-validation",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "validated-spec-rendered",
+      "label": "SVG·장면 생성",
+      "status": "inference",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 205,
+          "lineEnd": 212,
+          "symbol": "sceneFromSpec"
+        },
+        {
+          "path": "src/scene-bootstrap.ts",
+          "lineStart": 22,
+          "lineEnd": 24,
+          "symbol": "planScene"
+        },
+        {
+          "path": "src/svg-gallery.ts",
+          "lineStart": 71,
+          "lineEnd": 73,
+          "symbol": "planScene"
+        }
+      ],
+      "from": "schema-validation",
+      "to": "rendering",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "rendered-files-staged",
+      "label": "파일 묶음 구성",
+      "status": "inference",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 207,
+          "lineEnd": 219,
+          "symbol": "write(`${spec.artifactId}.svg`"
+        },
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 229,
+          "lineEnd": 231,
+          "symbol": "publishProjectDirectory"
+        },
+        {
+          "path": "src/project-publish.ts",
+          "lineStart": 176,
+          "lineEnd": 178,
+          "symbol": "renameSync"
+        }
+      ],
+      "from": "rendering",
+      "to": "project-publication",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "published-under-session-docs",
+      "label": "docs/vl/projects",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/session-export.ts",
+          "lineStart": 230,
+          "lineEnd": 235,
+          "symbol": "targetProject"
+        },
+        {
+          "path": "src/project-publish.ts",
+          "lineStart": 167,
+          "lineEnd": 178,
+          "symbol": "export function publishProjectDirectory"
+        }
+      ],
+      "from": "project-publication",
+      "to": "output-location",
+      "relation": "data-movement"
+    }
+  ]
+}

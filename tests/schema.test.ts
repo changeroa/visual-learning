@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseVisualNoteSpec, readSourceRevision } from "../src/schema";
+import { parseHostedVisualNoteSpec, parseVisualNoteSpec } from "../src/schema";
+import { readSourceRevision } from "../src/source-revision";
 
 const validSpec = {
   schemaVersion: 1,
@@ -40,6 +41,19 @@ describe("visual note schema", () => {
     const parsed = parseVisualNoteSpec(input);
     // Then
     expect(parsed.source.commit).toBeNull();
+  });
+
+  test("hosted parsing takes only a scrubbed root; local parsing still requires an absolute one", () => {
+    // Given
+    const withRoot = (root: string): unknown => ({ ...validSpec, source: { root, commit: null } });
+    // When
+    const hosted = parseHostedVisualNoteSpec(withRoot("visual-learning"));
+    // Then
+    expect(hosted.source.root).toBe("visual-learning");
+    expect(() => parseVisualNoteSpec(withRoot("visual-learning"))).toThrow();
+    for (const root of ["", "/Users/x/repo", "~/repo", "~", "C:\\repo", "c:/repo", "\\\\host\\s"]) {
+      expect(() => parseHostedVisualNoteSpec(withRoot(root))).toThrow();
+    }
   });
 
   test("rejects a fact without repository evidence", () => {

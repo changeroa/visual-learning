@@ -26,13 +26,13 @@ describe("restore as a fresh token", () => {
     const snapshotA = readFileSync(revisionFiles(a.revisionPath).snapshot, "utf8");
 
     const b = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: a.committedToken,
     });
     const c = restoreTransaction({
-      vault: root,
+      root,
       project,
       artifactId: specV1.artifactId,
       revisionToken: "cas-0",

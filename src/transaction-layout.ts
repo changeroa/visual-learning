@@ -18,13 +18,13 @@ export type TransactionPaths = {
 };
 
 export function transactionPaths(
-  vault: string,
+  root: string,
   project: string,
   artifactId: string,
 ): TransactionPaths {
   const artifact = artifactPaths(project, artifactId);
-  const historyRoot = join(vault, artifact.base, "_history", artifactId);
-  const workingRoot = join(vault, artifact.drawingFolder);
+  const historyRoot = join(root, artifact.base, "_history", artifactId);
+  const workingRoot = join(root, artifact.drawingFolder);
   return {
     historyRoot,
     statePath: join(historyRoot, "STATE"),
@@ -34,9 +34,9 @@ export function transactionPaths(
     revisionsRoot: join(historyRoot, "revisions"),
     workingRoot,
     lockRoot: join(historyRoot, ".rwlock"),
-    stableSpecPath: join(vault, artifact.spec),
-    stableNotePath: join(vault, artifact.note),
-    stableSvgPath: join(vault, artifact.svg),
+    stableSpecPath: join(root, artifact.spec),
+    stableNotePath: join(root, artifact.note),
+    stableSvgPath: join(root, artifact.svg),
     revisionPath(token: string): string {
       return join(historyRoot, "revisions", token);
     },

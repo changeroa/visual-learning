@@ -2,7 +2,17 @@
   "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
-  "files": { "includes": ["**", "!node_modules", "!dist", "!tests/tmp"] },
+  "files": {
+    "includes": [
+      "**",
+      "!node_modules",
+      "!dist",
+      "!tests/tmp",
+      "!hosted/dist",
+      "!**/.build",
+      "!**/.wrangler"
+    ]
+  },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } },
   "linter": {
@@ -19,5 +29,11 @@
       "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" },
       "complexity": { "useLiteralKeys": "off" }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["hosted/worker/index.ts"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    }
+  ]
 }

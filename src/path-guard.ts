@@ -1,6 +1,6 @@
 import { lstatSync } from "node:fs";
 import { isAbsolute, join, normalize, sep } from "node:path";
-import { InputError, RuntimeError } from "./errors";
+import { InputError } from "./errors";
 
 export function ensureNormalizedAbsolute(path: string, label: string): string {
   if (!isAbsolute(path) || path === "/" || normalize(path) !== path) {
@@ -21,16 +21,14 @@ export function ensureRealDirectory(path: string, label: string): string {
     } catch (error) {
       throw new InputError(`${label} is unavailable: ${path}`, { cause: error });
     }
-    if (status.isSymbolicLink() || !status.isDirectory()) {
+    if (status.isSymbolicLink()) {
+      throw new InputError(
+        `${label} has a symlinked ancestor: ${current}; resolve it with realpath first`,
+      );
+    }
+    if (!status.isDirectory()) {
       throw new InputError(`${label} must be a real directory`);
     }
   }
   return checked;
-}
-
-export function ensureMatchingVault(vault: string, expectedVault: string): string {
-  if (vault !== expectedVault) {
-    throw new RuntimeError("--vault and --expected-vault must identify the same path");
-  }
-  return ensureRealDirectory(vault, "vault");
 }

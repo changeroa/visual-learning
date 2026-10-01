@@ -1,4 +1,4 @@
 interface:
   display_name: "Visual Learning"
   short_description: "Explain architecture, DB relationships, and API data journeys"
-  default_prompt: "Use $visual-learning to explain this codebase through a system overview, one user scenario, and evidence-backed API and data relationships as linked views under docs/vl/projects."
+  default_prompt: "Use $visual-learning to explain this codebase through a system overview, one user scenario, and evidence-backed API and data relationships as linked views under docs/vl/projects, generated offline; publish to the private atlas only the projects I name."

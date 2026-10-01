@@ -1,0 +1,1080 @@
+[
+  {
+    "artifactId": "vl-01-architecture",
+    "kind": "system-architecture",
+    "revision": 1,
+    "title": "visual-note 한 번의 호출이 파일이 되기까지",
+    "presentation": {
+      "layout": "components",
+      "direction": "left-to-right",
+      "columns": 2,
+      "frames": [
+        {
+          "id": "entry",
+          "label": "진입",
+          "category": "external",
+          "order": 0
+        },
+        {
+          "id": "assemble",
+          "label": "조립과 검증",
+          "category": "runtime",
+          "order": 1
+        },
+        {
+          "id": "publish",
+          "label": "게시",
+          "category": "data",
+          "order": 2
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "semanticId": "visual-note-cli",
+        "status": "fact",
+        "visual": {
+          "category": "external",
+          "frameId": "entry",
+          "shape": "rectangle",
+          "emphasis": "primary",
+          "lane": "upstream",
+          "order": 0
+        }
+      },
+      {
+        "semanticId": "cli-dispatch",
+        "status": "fact",
+        "visual": {
+          "category": "external",
+          "frameId": "entry",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 1
+        }
+      },
+      {
+        "semanticId": "session-export",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "assemble",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 2
+        }
+      },
+      {
+        "semanticId": "schema-validation",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "assemble",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 3
+        }
+      },
+      {
+        "semanticId": "rendering",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "assemble",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 4
+        }
+      },
+      {
+        "semanticId": "project-publication",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "publish",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 5
+        }
+      },
+      {
+        "semanticId": "output-location",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "publish",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 6
+        }
+      }
+    ],
+    "edges": [
+      {
+        "semanticId": "cli-enters-dispatch",
+        "from": "visual-note-cli",
+        "to": "cli-dispatch",
+        "status": "fact"
+      },
+      {
+        "semanticId": "dispatch-calls-export",
+        "from": "cli-dispatch",
+        "to": "session-export",
+        "status": "fact"
+      },
+      {
+        "semanticId": "export-validates-specs",
+        "from": "session-export",
+        "to": "schema-validation",
+        "status": "fact"
+      },
+      {
+        "semanticId": "validated-spec-rendered",
+        "from": "schema-validation",
+        "to": "rendering",
+        "status": "inference"
+      },
+      {
+        "semanticId": "rendered-files-staged",
+        "from": "rendering",
+        "to": "project-publication",
+        "status": "inference"
+      },
+      {
+        "semanticId": "published-under-session-docs",
+        "from": "project-publication",
+        "to": "output-location",
+        "status": "fact"
+      }
+    ],
+    "expectedHistogram": {
+      "#1971c2|#e7f5ff": 3,
+      "#1971c2|transparent": 3,
+      "#475569|transparent": 13,
+      "#64748b|#f8fafc": 3,
+      "#64748b|transparent": 3,
+      "#7950f2|#f3f0ff": 4,
+      "#7950f2|transparent": 4
+    }
+  },
+  {
+    "artifactId": "vl-02-export-series",
+    "kind": "workflow",
+    "revision": 1,
+    "title": "export-series의 스펙 폴더 시리즈 변환 순서",
+    "presentation": {
+      "layout": "components",
+      "direction": "left-to-right",
+      "columns": 2,
+      "frames": [
+        {
+          "id": "read",
+          "label": "읽고 검증",
+          "category": "security",
+          "order": 0
+        },
+        {
+          "id": "build",
+          "label": "임시 트리에 생성",
+          "category": "runtime",
+          "order": 1
+        },
+        {
+          "id": "publish",
+          "label": "게시 또는 거부",
+          "category": "data",
+          "order": 2
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "semanticId": "input-directories",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "read",
+          "shape": "rectangle",
+          "emphasis": "primary",
+          "lane": "upstream",
+          "order": 1
+        }
+      },
+      {
+        "semanticId": "validated-specs",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "read",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 2
+        }
+      },
+      {
+        "semanticId": "ordered-series",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "read",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 3
+        }
+      },
+      {
+        "semanticId": "staging-project",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "build",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 4
+        }
+      },
+      {
+        "semanticId": "rendered-series",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "build",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 5
+        }
+      },
+      {
+        "semanticId": "hashed-manifest",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "build",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 6
+        }
+      },
+      {
+        "semanticId": "published-project",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "publish",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 7
+        }
+      },
+      {
+        "semanticId": "collision-error",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "publish",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "exception",
+          "order": 8
+        }
+      }
+    ],
+    "edges": [
+      {
+        "semanticId": "check-directories",
+        "from": "input-directories",
+        "to": "validated-specs",
+        "status": "fact"
+      },
+      {
+        "semanticId": "parse-and-check",
+        "from": "validated-specs",
+        "to": "ordered-series",
+        "status": "fact"
+      },
+      {
+        "semanticId": "make-staging",
+        "from": "ordered-series",
+        "to": "staging-project",
+        "status": "fact"
+      },
+      {
+        "semanticId": "write-outputs",
+        "from": "staging-project",
+        "to": "rendered-series",
+        "status": "fact"
+      },
+      {
+        "semanticId": "hash-files",
+        "from": "rendered-series",
+        "to": "hashed-manifest",
+        "status": "fact"
+      },
+      {
+        "semanticId": "publish-target",
+        "from": "hashed-manifest",
+        "to": "published-project",
+        "status": "fact"
+      },
+      {
+        "semanticId": "collision-branch",
+        "from": "published-project",
+        "to": "collision-error",
+        "status": "fact"
+      }
+    ],
+    "expectedHistogram": {
+      "#1971c2|#e7f5ff": 3,
+      "#1971c2|transparent": 3,
+      "#2f9e44|#ebfbee": 4,
+      "#2f9e44|transparent": 4,
+      "#475569|transparent": 15,
+      "#7950f2|#f3f0ff": 4,
+      "#7950f2|transparent": 4
+    }
+  },
+  {
+    "artifactId": "vl-03-cas-refresh",
+    "kind": "workflow",
+    "revision": 1,
+    "title": "refresh가 CAS 토큰으로 편집을 지키는 법",
+    "presentation": {
+      "layout": "components",
+      "direction": "left-to-right",
+      "columns": 2,
+      "frames": [
+        {
+          "id": "enter",
+          "label": "진입과 잠금",
+          "category": "security",
+          "order": 0
+        },
+        {
+          "id": "cas",
+          "label": "상태와 토큰",
+          "category": "data",
+          "order": 1
+        },
+        {
+          "id": "commit",
+          "label": "준비와 발행",
+          "category": "runtime",
+          "order": 2
+        },
+        {
+          "id": "recover",
+          "label": "복구",
+          "category": "risk",
+          "order": 3
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "semanticId": "engine-facade",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "enter",
+          "shape": "rectangle",
+          "emphasis": "primary",
+          "lane": "main",
+          "order": 1
+        }
+      },
+      {
+        "semanticId": "exclusive-lock",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "enter",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 2
+        }
+      },
+      {
+        "semanticId": "state-records",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "cas",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 3
+        }
+      },
+      {
+        "semanticId": "cas-token",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "cas",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 4
+        }
+      },
+      {
+        "semanticId": "refresh-ownership",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "commit",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 5
+        }
+      },
+      {
+        "semanticId": "revision-bundle",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "commit",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 6
+        }
+      },
+      {
+        "semanticId": "transaction-recovery",
+        "status": "fact",
+        "visual": {
+          "category": "risk",
+          "frameId": "recover",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "exception",
+          "order": 7
+        }
+      },
+      {
+        "semanticId": "restore-transaction",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "enter",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "upstream",
+          "order": 8
+        }
+      }
+    ],
+    "edges": [
+      {
+        "semanticId": "facade-to-lock",
+        "from": "engine-facade",
+        "to": "exclusive-lock",
+        "status": "fact"
+      },
+      {
+        "semanticId": "lock-to-state",
+        "from": "exclusive-lock",
+        "to": "state-records",
+        "status": "fact"
+      },
+      {
+        "semanticId": "state-to-token",
+        "from": "state-records",
+        "to": "cas-token",
+        "status": "fact"
+      },
+      {
+        "semanticId": "token-to-refresh",
+        "from": "cas-token",
+        "to": "refresh-ownership",
+        "status": "fact"
+      },
+      {
+        "semanticId": "refresh-to-bundle",
+        "from": "refresh-ownership",
+        "to": "revision-bundle",
+        "status": "fact"
+      },
+      {
+        "semanticId": "bundle-to-state",
+        "from": "revision-bundle",
+        "to": "state-records",
+        "status": "fact"
+      },
+      {
+        "semanticId": "state-to-recovery",
+        "from": "state-records",
+        "to": "transaction-recovery",
+        "status": "fact"
+      },
+      {
+        "semanticId": "recovery-to-token",
+        "from": "transaction-recovery",
+        "to": "cas-token",
+        "status": "fact"
+      },
+      {
+        "semanticId": "restore-to-lock",
+        "from": "restore-transaction",
+        "to": "exclusive-lock",
+        "status": "fact"
+      },
+      {
+        "semanticId": "restore-to-bundle",
+        "from": "restore-transaction",
+        "to": "revision-bundle",
+        "status": "fact"
+      }
+    ],
+    "expectedHistogram": {
+      "#1971c2|#e7f5ff": 3,
+      "#1971c2|transparent": 3,
+      "#2f9e44|#ebfbee": 4,
+      "#2f9e44|transparent": 4,
+      "#475569|transparent": 21,
+      "#7950f2|#f3f0ff": 3,
+      "#7950f2|transparent": 3,
+      "#e03131|#fff5f5": 2,
+      "#e03131|transparent": 2
+    }
+  },
+  {
+    "artifactId": "vl-04-trust-boundaries",
+    "kind": "trust-boundary",
+    "revision": 1,
+    "title": "경로와 쓰기를 통제하는 경계",
+    "presentation": {
+      "layout": "components",
+      "direction": "left-to-right",
+      "columns": 2,
+      "frames": [
+        {
+          "id": "caller",
+          "label": "호출자 입력",
+          "category": "external",
+          "order": 0
+        },
+        {
+          "id": "process",
+          "label": "visual-note 프로세스",
+          "category": "runtime",
+          "order": 1
+        },
+        {
+          "id": "filesystem",
+          "label": "파일시스템 경계",
+          "category": "security",
+          "order": 2
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "semanticId": "entry-guards",
+        "status": "fact",
+        "visual": {
+          "category": "external",
+          "frameId": "caller",
+          "shape": "rectangle",
+          "emphasis": "primary",
+          "lane": "main",
+          "order": 1
+        }
+      },
+      {
+        "semanticId": "vault-guard",
+        "status": "fact",
+        "visual": {
+          "category": "external",
+          "frameId": "caller",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 2
+        }
+      },
+      {
+        "semanticId": "source-guard",
+        "status": "fact",
+        "visual": {
+          "category": "external",
+          "frameId": "caller",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "upstream",
+          "order": 3
+        }
+      },
+      {
+        "semanticId": "revision-read",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "process",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "upstream",
+          "order": 4
+        }
+      },
+      {
+        "semanticId": "write-adapter",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "process",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 5
+        }
+      },
+      {
+        "semanticId": "descriptor-traversal",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "filesystem",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 6
+        }
+      },
+      {
+        "semanticId": "no-overwrite",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "filesystem",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 7
+        }
+      },
+      {
+        "semanticId": "network-scope",
+        "status": "inference",
+        "visual": {
+          "category": "runtime",
+          "frameId": "process",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "exception",
+          "order": 8
+        }
+      }
+    ],
+    "edges": [
+      {
+        "semanticId": "entry-to-vault-guard",
+        "from": "entry-guards",
+        "to": "vault-guard",
+        "status": "fact"
+      },
+      {
+        "semanticId": "entry-to-source-guard",
+        "from": "entry-guards",
+        "to": "source-guard",
+        "status": "fact"
+      },
+      {
+        "semanticId": "source-to-revision",
+        "from": "source-guard",
+        "to": "revision-read",
+        "status": "fact"
+      },
+      {
+        "semanticId": "entry-to-write-adapter",
+        "from": "entry-guards",
+        "to": "write-adapter",
+        "status": "fact"
+      },
+      {
+        "semanticId": "adapter-to-helper",
+        "from": "write-adapter",
+        "to": "descriptor-traversal",
+        "status": "fact"
+      },
+      {
+        "semanticId": "parent-to-publish",
+        "from": "descriptor-traversal",
+        "to": "no-overwrite",
+        "status": "fact"
+      },
+      {
+        "semanticId": "local-process-boundary",
+        "from": "write-adapter",
+        "to": "network-scope",
+        "status": "inference"
+      }
+    ],
+    "expectedHistogram": {
+      "#2f9e44|#ebfbee": 3,
+      "#2f9e44|transparent": 3,
+      "#475569|transparent": 15,
+      "#64748b|#f8fafc": 4,
+      "#64748b|transparent": 4,
+      "#7950f2|#f3f0ff": 4,
+      "#7950f2|transparent": 4
+    }
+  },
+  {
+    "artifactId": "vl-05-learning-layer",
+    "kind": "component-architecture",
+    "revision": 1,
+    "title": "learning layer가 끼어드는 위치다",
+    "presentation": {
+      "layout": "components",
+      "direction": "left-to-right",
+      "columns": 2,
+      "frames": [
+        {
+          "id": "spec",
+          "label": "스펙",
+          "category": "data",
+          "order": 0
+        },
+        {
+          "id": "render",
+          "label": "렌더러",
+          "category": "runtime",
+          "order": 1
+        },
+        {
+          "id": "export",
+          "label": "내보내기",
+          "category": "neutral",
+          "order": 2
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "semanticId": "learning-schema",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "spec",
+          "shape": "rectangle",
+          "emphasis": "primary",
+          "lane": "main",
+          "order": 1
+        }
+      },
+      {
+        "semanticId": "visual-note-spec",
+        "status": "fact",
+        "visual": {
+          "category": "data",
+          "frameId": "spec",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 2
+        }
+      },
+      {
+        "semanticId": "learning-header",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "render",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 3
+        }
+      },
+      {
+        "semanticId": "learning-sections",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "render",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 4
+        }
+      },
+      {
+        "semanticId": "route-badges",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "render",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 5
+        }
+      },
+      {
+        "semanticId": "learning-index-lines",
+        "status": "fact",
+        "visual": {
+          "category": "runtime",
+          "frameId": "render",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 6
+        }
+      },
+      {
+        "semanticId": "export-series",
+        "status": "fact",
+        "visual": {
+          "category": "neutral",
+          "frameId": "export",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 7
+        }
+      }
+    ],
+    "edges": [
+      {
+        "semanticId": "schema-defines-spec",
+        "from": "learning-schema",
+        "to": "visual-note-spec",
+        "status": "fact"
+      },
+      {
+        "semanticId": "spec-to-header",
+        "from": "visual-note-spec",
+        "to": "learning-header",
+        "status": "fact"
+      },
+      {
+        "semanticId": "spec-to-sections",
+        "from": "visual-note-spec",
+        "to": "learning-sections",
+        "status": "fact"
+      },
+      {
+        "semanticId": "spec-to-badges",
+        "from": "visual-note-spec",
+        "to": "route-badges",
+        "status": "fact"
+      },
+      {
+        "semanticId": "spec-to-index",
+        "from": "visual-note-spec",
+        "to": "learning-index-lines",
+        "status": "fact"
+      },
+      {
+        "semanticId": "header-in-export",
+        "from": "learning-header",
+        "to": "export-series",
+        "status": "fact"
+      },
+      {
+        "semanticId": "sections-in-export",
+        "from": "learning-sections",
+        "to": "export-series",
+        "status": "fact"
+      },
+      {
+        "semanticId": "badges-in-export",
+        "from": "route-badges",
+        "to": "export-series",
+        "status": "fact"
+      },
+      {
+        "semanticId": "index-in-export",
+        "from": "learning-index-lines",
+        "to": "export-series",
+        "status": "fact"
+      }
+    ],
+    "expectedHistogram": {
+      "#1971c2|#e7f5ff": 3,
+      "#1971c2|transparent": 3,
+      "#475569|#f8fafc": 2,
+      "#475569|transparent": 21,
+      "#7950f2|#f3f0ff": 5,
+      "#7950f2|transparent": 5
+    }
+  },
+  {
+    "artifactId": "vl-06-adr-scene-untouched",
+    "kind": "adr",
+    "revision": 1,
+    "title": "Excalidraw 장면에 번호를 추가하지 않은 이유",
+    "presentation": {
+      "layout": "components",
+      "direction": "left-to-right",
+      "columns": 2,
+      "frames": [
+        {
+          "id": "existing",
+          "label": "기존 장면 규칙",
+          "category": "neutral",
+          "order": 0
+        },
+        {
+          "id": "chosen",
+          "label": "채택: SVG와 노트에만 번호",
+          "category": "security",
+          "order": 1
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "semanticId": "element-role",
+        "status": "fact",
+        "visual": {
+          "category": "neutral",
+          "frameId": "existing",
+          "shape": "rectangle",
+          "emphasis": "primary",
+          "lane": "main",
+          "order": 1
+        }
+      },
+      {
+        "semanticId": "stable-id-factory",
+        "status": "fact",
+        "visual": {
+          "category": "neutral",
+          "frameId": "existing",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 2
+        }
+      },
+      {
+        "semanticId": "plan-scene",
+        "status": "fact",
+        "visual": {
+          "category": "neutral",
+          "frameId": "existing",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 3
+        }
+      },
+      {
+        "semanticId": "scene-from-spec",
+        "status": "fact",
+        "visual": {
+          "category": "neutral",
+          "frameId": "existing",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 4
+        }
+      },
+      {
+        "semanticId": "route-badges",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "chosen",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "downstream",
+          "order": 5
+        }
+      },
+      {
+        "semanticId": "refresh-apply",
+        "status": "fact",
+        "visual": {
+          "category": "neutral",
+          "frameId": "existing",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "main",
+          "order": 6
+        }
+      },
+      {
+        "semanticId": "learning-route",
+        "status": "fact",
+        "visual": {
+          "category": "security",
+          "frameId": "chosen",
+          "shape": "rectangle",
+          "emphasis": "secondary",
+          "lane": "upstream",
+          "order": 7
+        }
+      }
+    ],
+    "edges": [
+      {
+        "semanticId": "role-constrains-plan",
+        "from": "element-role",
+        "to": "plan-scene",
+        "status": "fact"
+      },
+      {
+        "semanticId": "id-factory-to-plan",
+        "from": "stable-id-factory",
+        "to": "plan-scene",
+        "status": "fact"
+      },
+      {
+        "semanticId": "plan-to-scene",
+        "from": "plan-scene",
+        "to": "scene-from-spec",
+        "status": "fact"
+      },
+      {
+        "semanticId": "plan-to-badges",
+        "from": "plan-scene",
+        "to": "route-badges",
+        "status": "fact"
+      },
+      {
+        "semanticId": "route-to-badges",
+        "from": "learning-route",
+        "to": "route-badges",
+        "status": "fact"
+      },
+      {
+        "semanticId": "plan-to-refresh",
+        "from": "plan-scene",
+        "to": "refresh-apply",
+        "status": "fact"
+      },
+      {
+        "semanticId": "human-preserve",
+        "from": "refresh-apply",
+        "to": "scene-from-spec",
+        "status": "fact"
+      }
+    ],
+    "expectedHistogram": {
+      "#2f9e44|#ebfbee": 3,
+      "#2f9e44|transparent": 3,
+      "#475569|#f8fafc": 6,
+      "#475569|transparent": 21
+    }
+  }
+]

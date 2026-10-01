@@ -42,7 +42,7 @@ function main(): void {
     const humanBefore = before.elements.filter(
       (element) => element.customData?.["owner"] !== "agent",
     );
-    const refresh = refreshArtifact({ vault, project, spec: specV2, expectedToken: "cas-0" });
+    const refresh = refreshArtifact({ root: vault, project, spec: specV2, expectedToken: "cas-0" });
     const after = readFixtureScene(vault, project);
     const humanAfter = after.elements.filter(
       (element) => element.customData?.["owner"] !== "agent",

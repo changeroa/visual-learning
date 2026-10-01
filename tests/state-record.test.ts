@@ -52,7 +52,7 @@ describe("transaction STATE record", () => {
     const before = transactionState(root, project);
 
     const result = refreshTransaction({
-      vault: root,
+      root,
       project,
       spec: specV2,
       expectedToken: before.committedToken,

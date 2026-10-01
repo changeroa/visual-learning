@@ -115,29 +115,25 @@ const invalidResults = invalidInputs.map((item) => {
   };
 });
 
-const vault = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-adversarial-vault-")));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-adversarial-root-")));
 const validPath = join(directory, "valid.json");
 writeFileSync(validPath, `${JSON.stringify(fixture)}\n`);
-const traversalBefore = manifest(vault);
+const traversalBefore = manifest(root);
 const traversal = run([
   "create",
-  "--vault",
-  vault,
-  "--expected-vault",
-  vault,
+  "--root",
+  root,
   "--project",
   "../../escape",
   "--spec",
   validPath,
   "--json",
 ]);
-const traversalAfter = manifest(vault);
+const traversalAfter = manifest(root);
 const create = run([
   "create",
-  "--vault",
-  vault,
-  "--expected-vault",
-  vault,
+  "--root",
+  root,
   "--project",
   "fixture",
   "--spec",
@@ -145,20 +141,18 @@ const create = run([
   "--json",
 ]);
 outputSchema.parse(JSON.parse(create.stdout));
-const dirtyBefore = manifest(vault);
+const dirtyBefore = manifest(root);
 const dirty = run([
   "create",
-  "--vault",
-  vault,
-  "--expected-vault",
-  vault,
+  "--root",
+  root,
   "--project",
   "fixture",
   "--spec",
   validPath,
   "--json",
 ]);
-const dirtyAfter = manifest(vault);
+const dirtyAfter = manifest(root);
 const missing = run(["validate", "--spec", join(directory, "missing.json"), "--json"]);
 
 const receipt = {

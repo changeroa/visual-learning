@@ -24,10 +24,10 @@ export function jsonBytes(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+export function formatResult(value: unknown, json: boolean): string {
+  return json ? `${JSON.stringify(value)}\n` : `OK ${JSON.stringify(value)}\n`;
+}
+
 export function writeResult(value: unknown, json: boolean): void {
-  if (!json) {
-    process.stdout.write(`OK ${JSON.stringify(value)}\n`);
-    return;
-  }
-  process.stdout.write(`${JSON.stringify(value)}\n`);
+  process.stdout.write(formatResult(value, json));
 }

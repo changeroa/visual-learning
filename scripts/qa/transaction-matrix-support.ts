@@ -33,10 +33,10 @@ export function fixtureRoot(out: string, label: string): string {
   return root;
 }
 
-export function childMode(boundary: Boundary, vault: string): never {
-  const { project, state } = seedTransaction(vault, "human-arrow-to-agent");
+export function childMode(boundary: Boundary, root: string): never {
+  const { project, state } = seedTransaction(root, "human-arrow-to-agent");
   refreshTransaction(
-    { vault, project, spec: specV2, expectedToken: state.committedToken },
+    { root, project, spec: specV2, expectedToken: state.committedToken },
     {
       onBoundary(name) {
         if (name === boundary) process.kill(process.pid, "SIGTERM");
@@ -50,21 +50,18 @@ export function childResult(
   boundary: Boundary,
   out: string,
 ): { readonly status: string; readonly token: string } {
-  const vault = fixtureRoot(out, `kill-${boundary}`);
+  const root = fixtureRoot(out, `kill-${boundary}`);
   const executable = Bun.argv[0];
   const script = Bun.argv[1];
   if (executable === undefined || script === undefined) throw new TypeError("script path missing");
-  const child = Bun.spawnSync(
-    [executable, script, "--child-boundary", boundary, "--vault", vault],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const child = Bun.spawnSync([executable, script, "--child-boundary", boundary, "--root", root], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   let status = "BLOCKED";
   let token = "cas-0";
   try {
-    const opened = openTransaction(vault, "human-arrow-to-agent", specV1.artifactId);
+    const opened = openTransaction(root, "human-arrow-to-agent", specV1.artifactId);
     status = `${opened.recovery}:${opened.state.committedToken}`;
     token = opened.state.committedToken;
   } catch (error) {
@@ -87,34 +84,34 @@ export function injectionResult(
   window: InjectionWindow,
   out: string,
 ): { readonly status: string; readonly token: string } {
-  const vault = fixtureRoot(out, `inject-${window}`);
-  const { project, state } = seedTransaction(vault, "human-arrow-to-agent");
+  const root = fixtureRoot(out, `inject-${window}`);
+  const { project, state } = seedTransaction(root, "human-arrow-to-agent");
   try {
     refreshTransaction(
-      { vault, project, spec: specV2, expectedToken: state.committedToken },
+      { root, project, spec: specV2, expectedToken: state.committedToken },
       {
         onBoundary(name) {
-          if (name === injectionBoundary(window)) humanSave(vault, project, window);
+          if (name === injectionBoundary(window)) humanSave(root, project, window);
         },
       },
     );
-    return { status: "UNEXPECTED-SUCCESS", token: transactionState(vault, project).committedToken };
+    return { status: "UNEXPECTED-SUCCESS", token: transactionState(root, project).committedToken };
   } catch (error) {
     return {
       status: error instanceof Error ? error.message : "error",
-      token: transactionState(vault, project).committedToken,
+      token: transactionState(root, project).committedToken,
     };
   }
 }
 
 export function tamperResult(caseName: string, out: string): string {
-  const vault = fixtureRoot(out, `tamper-${caseName}`);
-  const { project } = seedTransaction(vault, "human-arrow-to-agent");
-  const paths = transactionPaths(vault, project, specV1.artifactId);
-  const state = transactionState(vault, project);
+  const root = fixtureRoot(out, `tamper-${caseName}`);
+  const { project } = seedTransaction(root, "human-arrow-to-agent");
+  const paths = transactionPaths(root, project, specV1.artifactId);
+  const state = transactionState(root, project);
   if (caseName === "missing-working") rmSync(state.workingPath, { force: true });
   if (caseName === "missing-revision") rmSync(state.revisionPath, { recursive: true, force: true });
-  if (caseName === "mismatched-agent-base") agentTamper(vault, project);
+  if (caseName === "mismatched-agent-base") agentTamper(root, project);
   if (caseName === "mismatched-token") {
     writeState(paths.statePath, {
       ...state,
@@ -158,7 +155,7 @@ export function tamperResult(caseName: string, out: string): string {
     });
   }
   try {
-    openTransaction(vault, project, specV1.artifactId);
+    openTransaction(root, project, specV1.artifactId);
     return "UNEXPECTED-SUCCESS";
   } catch (error) {
     return error instanceof Error ? error.message : "BLOCKED";

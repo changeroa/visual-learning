@@ -1,4 +1,4 @@
-import { planScene } from "./renderer-plan";
+import { planScene, type ScenePlan } from "./renderer-plan";
 import type { GeneratedView } from "./template-generate";
 import type { ClaimStyle } from "./template-style";
 
@@ -9,6 +9,11 @@ const CAPTION_HEIGHT = 48;
 const COLUMNS = 2;
 
 type Palette = { readonly fill: string; readonly stroke: string; readonly text: string };
+type PlannedView = {
+  readonly view: GeneratedView;
+  readonly plan: ScenePlan;
+  readonly size: { readonly width: number; readonly height: number };
+};
 
 const CATEGORY_PALETTE = {
   cloudflare: { fill: "#fff4e6", stroke: "#e8590c", text: "#7c2d12" },
@@ -68,8 +73,7 @@ function styleMap(styles: readonly ClaimStyle[]): ReadonlyMap<string, ClaimStyle
   return new Map(styles.map((style) => [style.semanticId, style]));
 }
 
-function sceneSize(view: GeneratedView): { readonly width: number; readonly height: number } {
-  const plan = planScene(view.spec);
+function sceneSize(plan: ScenePlan): { readonly width: number; readonly height: number } {
   return {
     width: Math.max(...plan.elements.map((element) => element.x + element.width), 0) + CARD_PADDING,
     height:
@@ -77,11 +81,21 @@ function sceneSize(view: GeneratedView): { readonly width: number; readonly heig
   };
 }
 
-function routeBadges(view: GeneratedView, originX: number, originY: number): string {
+function plannedView(view: GeneratedView): PlannedView {
+  const plan = planScene(view.spec);
+  return { view, plan, size: sceneSize(plan) };
+}
+
+function routeBadges(
+  view: GeneratedView,
+  plan: ScenePlan,
+  originX: number,
+  originY: number,
+): string {
   const route = view.spec.learning?.route ?? [];
   const shapes = new Map(
-    planScene(view.spec)
-      .elements.filter((element) => element.role === "node-shape")
+    plan.elements
+      .filter((element) => element.role === "node-shape")
       .map((element) => [element.semanticId, element]),
   );
   return route
@@ -95,10 +109,9 @@ function routeBadges(view: GeneratedView, originX: number, originY: number): str
     .join("");
 }
 
-function renderCard(view: GeneratedView, originX: number, originY: number): string {
-  const plan = planScene(view.spec);
+function renderCard(planned: PlannedView, originX: number, originY: number): string {
+  const { view, plan, size } = planned;
   const styles = styleMap(view.styles);
-  const size = sceneSize(view);
   const pieces = [
     `<rect x="${originX}" y="${originY}" width="${size.width + CARD_PADDING}" height="${size.height + CAPTION_HEIGHT}" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>`,
     `<text x="${originX + 24}" y="${originY + 29}" font-family="ui-sans-serif, sans-serif" font-size="12" font-weight="700" fill="#64748b">${escapeXml(`${view.kind} · ${view.viewId}`)}</text>`,
@@ -164,7 +177,7 @@ function renderCard(view: GeneratedView, originX: number, originY: number): stri
       `<text x="${textX}" y="${textY}" text-anchor="${centered ? "middle" : "start"}" font-family="Virgil, 'Comic Sans MS', ui-rounded, sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${palette.text}">${textLines(element.text, textX, fontSize, palette.text)}</text>`,
     );
   }
-  pieces.push(routeBadges(view, originX, originY));
+  pieces.push(routeBadges(view, plan, originX, originY));
   return pieces.join("");
 }
 
@@ -189,13 +202,14 @@ export function renderViewSvg(view: GeneratedView): {
   readonly width: number;
   readonly height: number;
 } {
-  const size = sceneSize(view);
+  const planned = plannedView(view);
+  const { size } = planned;
   const width = size.width + CARD_PADDING * 3;
   const height = size.height + CAPTION_HEIGHT + CARD_PADDING * 3;
   return {
     width,
     height,
-    svg: svgDocument(width, height, renderCard(view, CARD_PADDING, CARD_PADDING)),
+    svg: svgDocument(width, height, renderCard(planned, CARD_PADDING, CARD_PADDING)),
   };
 }
 
@@ -204,12 +218,13 @@ export function renderGallerySvg(views: readonly GeneratedView[]): {
   readonly width: number;
   readonly height: number;
 } {
-  const sizes = views.map((view) => sceneSize(view));
+  const plannedViews = views.map((view) => plannedView(view));
   const columnWidths = new Array<number>(COLUMNS).fill(0);
   const rowHeights: number[] = [];
-  for (let index = 0; index < sizes.length; index += 1) {
-    const size = sizes[index];
-    if (size === undefined) throw new TypeError("gallery size is missing");
+  for (let index = 0; index < plannedViews.length; index += 1) {
+    const planned = plannedViews[index];
+    if (planned === undefined) throw new TypeError("planned gallery view is missing");
+    const { size } = planned;
     const column = index % COLUMNS;
     const row = Math.floor(index / COLUMNS);
     columnWidths[column] = Math.max(columnWidths[column] ?? 0, size.width + CARD_PADDING);
@@ -218,8 +233,8 @@ export function renderGallerySvg(views: readonly GeneratedView[]): {
   const width = columnWidths.reduce((sum, value) => sum + value, CARD_PADDING) + COLUMN_GAP;
   const height =
     rowHeights.reduce((sum, value) => sum + value, CARD_PADDING) + ROW_GAP * rowHeights.length;
-  const cards = views
-    .map((view, index) => {
+  const cards = plannedViews
+    .map((planned, index) => {
       const column = index % COLUMNS;
       const row = Math.floor(index / COLUMNS);
       const x =
@@ -230,7 +245,7 @@ export function renderGallerySvg(views: readonly GeneratedView[]): {
         CARD_PADDING +
         rowHeights.slice(0, row).reduce((sum, value) => sum + value, 0) +
         row * ROW_GAP;
-      return renderCard(view, x, y);
+      return renderCard(planned, x, y);
     })
     .join("");
   return {

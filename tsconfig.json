@@ -21,5 +21,6 @@
     "noEmit": true,
     "moduleDetection": "force"
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "hosted/dist", "**/.wrangler"]
 }

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "project": "visual-learning",
+  "artifacts": [
+    {
+      "artifactId": "vl-01-architecture",
+      "kind": "system-architecture",
+      "revision": 1
+    },
+    {
+      "artifactId": "vl-02-export-series",
+      "kind": "workflow",
+      "revision": 1
+    }
+  ],
+  "files": [
+    {
+      "relativePath": "specs/vl-01-architecture.json",
+      "sha256": "c538a4cb7146d65715994bfc5e87907ebeda0191788c0fa6d3cc6e829aa8afb0"
+    },
+    {
+      "relativePath": "specs/vl-02-export-series.json",
+      "sha256": "f1be249f832ea67b30371139fc8836c66fceb9f68dc7d9df489fa490730e7153"
+    },
+    {
+      "relativePath": "vl-01-architecture.excalidraw.md",
+      "sha256": "9a57521a8db6ca8ff3496bf8c105f1a49baa35b25b93490a8e825f1133bac0dd"
+    },
+    {
+      "relativePath": "vl-02-export-series.excalidraw.md",
+      "sha256": "da34ececc567bd889cc4958eae05fcf6f531fc1ebb66ff19bd36c4551c47c63e"
+    }
+  ]
+}
