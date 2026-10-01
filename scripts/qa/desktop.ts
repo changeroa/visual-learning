@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseOptions, required } from "../../src/arguments";
 import { RuntimeError } from "../../src/errors";
@@ -33,7 +33,7 @@ import {
   specBytes,
 } from "./desktop-support";
 
-const EVIDENCE = "/Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault";
+const EVIDENCE = join(homedir(), "tmp/.omo/evidence/agent-visual-learning-vault");
 const ARTIFACT = "project-map-atlas-shop";
 const STEPS = [
   "create",

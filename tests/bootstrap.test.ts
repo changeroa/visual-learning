@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  cpSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -14,7 +16,10 @@ import { sha256 } from "../src/io";
 
 const cli = join(import.meta.dir, "../bin/visual-note");
 const bundle = join(import.meta.dir, "fixtures/sample-project/bundle.json");
-const source = realpathSync(join(import.meta.dir, "fixtures/sample-project/repo"));
+// The fixture lives inside the skill checkout, where git would report the checkout's own HEAD;
+// a copy outside any VCS checkout is the plain source these tests describe (commit: null).
+const source = realpathSync(mkdtempSync(join(tmpdir(), "visual-note-plain-source-")));
+cpSync(join(import.meta.dir, "fixtures/sample-project/repo"), source, { recursive: true });
 const isolatedBootstrap = join(import.meta.dir, "../scripts/qa/isolated-bootstrap.ts");
 
 function tree(
@@ -235,12 +240,27 @@ describe("bootstrap sample workflow", () => {
     const vault = join(directory, "vault");
     const out = join(directory, "receipt.json");
     const tamperedReceipt = join(directory, "plugin-install.json");
-    const pluginReceipt = JSON.parse(
-      readFileSync(
-        "/Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault/task-2-plugin-install.json",
-        "utf8",
-      ),
-    ) as { plugin: { assets: { name: string; sha256: string }[] } };
+    const pluginDirectory = join(directory, "plugin");
+    mkdirSync(pluginDirectory);
+    const pluginFiles = {
+      "manifest.json": `${JSON.stringify({ id: "obsidian-excalidraw-plugin", version: "2.26.4" })}\n`,
+      "main.js": "module.exports = {};\n",
+      "data.json": "{}\n",
+    };
+    for (const [name, content] of Object.entries(pluginFiles)) {
+      writeFileSync(join(pluginDirectory, name), content);
+    }
+    const pluginReceipt = {
+      plugin: {
+        id: "obsidian-excalidraw-plugin",
+        version: "2.26.4",
+        directory: pluginDirectory,
+        assets: Object.entries(pluginFiles).map(([name, content]) => ({
+          name,
+          sha256: sha256(Buffer.from(content)),
+        })),
+      },
+    };
     const main = pluginReceipt.plugin.assets.find((asset) => asset.name === "main.js");
     expect(main).toBeDefined();
     if (main === undefined) throw new Error("main.js asset missing from task-2 receipt");

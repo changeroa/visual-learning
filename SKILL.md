@@ -73,6 +73,37 @@ every view automatically. For DB/API learning, use the question-led sequence abo
 
 Use `presentation.frames` plus node-level `visual.category`, `visual.frameId`, `visual.shape`, `visual.emphasis`, `visual.lane`, and `visual.order`. Reuse the same category palette and reading direction across every view in the series.
 
+## Learning layer
+
+Add an optional `learning` block to a spec when the view should teach, not only depict. It renders
+into the companion note and index; the SVG gets numbered route badges; the Excalidraw scene is
+unchanged. Read [references/learning-figure-research.md](references/learning-figure-research.md)
+for the evidence behind each field and its strength.
+
+- `question` / `answer`: the one question the view answers and an evidence-faithful answer in at
+  most three sentences. The note shows both above the figure; the index lists them per view.
+- `route`: an optional numbered reading path, one `explanation` per element. Readers may start at
+  any number; never present the route as the only valid order.
+- `glossary`: exact identifiers with their meaning in this system, not dictionary definitions.
+- `scope.covers` / `scope.omits`: say what the view leaves out. A `trust-boundary` view is one
+  threat-model view; list the threats, attacker capabilities, and mitigations it does not model.
+- `verify`: a concrete check per consequential claim (file, test, or read-only command run from the
+  source root). Status tags are provenance, not a claimed learning aid.
+- `checks`: optional self-check prompts, rendered folded; keep them separate from the first read.
+- `analogies`: only with explicit `holds` and `breaks`.
+
+Declare what each arrow means with edge `relation`: `runtime-call`, `data-movement`,
+`state-transition`, or `static-reference`. Group nodes into `presentation.frames` with the
+`components` layout and `presentation.columns: 2` when a figure must stay readable inside a note
+pane; single-row chains become too wide to read.
+
+Before export, run the research-rule review. Findings are advice with their basis; a malformed
+spec exits 2:
+
+```sh
+"$SKILL/bin/visual-note" review-learning --spec /absolute/path/spec.json --json
+```
+
 ## Interactive web authoring mode
 
 When the user requests a local interactive web page, React Flow, animated commit comparison, a JSON
@@ -123,6 +154,8 @@ SOURCE=/absolute/path/to/source
 ```sh
 "$SKILL/bin/visual-note" validate --spec /absolute/path/spec.json --json
 ```
+
+For specs with a `learning` block, also run `review-learning` and resolve its `warn` findings.
 
 3. By default, export the linked series below the session root:
 

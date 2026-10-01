@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ReadableStreamDefaultReader as NodeStreamReader } from "node:stream/web";
 import { InputError, RuntimeError } from "../../src/errors";
 
-const evidenceBin = "/Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault/bin";
+const evidenceBin = join(homedir(), "tmp/.omo/evidence/agent-visual-learning-vault/bin");
 const app = "/Applications/Obsidian.app";
 const executable = `${app}/Contents/MacOS/Obsidian`;
 const cli = "/Applications/Obsidian.app/Contents/MacOS/obsidian-cli";
-const expectedVault = "/Users/billionjaepyo/Documents/Obsidian Vault";
-const socketParent = process.env["HOME"] ?? "/Users/billionjaepyo";
+const expectedVault = join(homedir(), "Documents/Obsidian Vault");
+const socketParent = process.env["HOME"] ?? homedir();
 
 type ArmedWatcher = {
   readonly child: Bun.Subprocess<"ignore", "pipe", "pipe">;

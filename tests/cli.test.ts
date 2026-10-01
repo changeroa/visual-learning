@@ -33,6 +33,7 @@ describe("visual-note CLI", () => {
       "validate",
       "authoring-schema",
       "compile-authoring",
+      "review-learning",
       "open",
       "restore",
       "contract",
@@ -71,6 +72,58 @@ describe("visual-note CLI", () => {
     // Then
     expect(accepted.code).toBe(0);
     expect(rejected.code).toBe(2);
+  });
+
+  test("review-learning reports research-rule findings and rejects a dangling route", () => {
+    // Given
+    const learning = join(import.meta.dir, "fixtures/learning/checkout-journey.json");
+    const legacy = join(import.meta.dir, "fixtures/architecture.json");
+    const dangling = join(import.meta.dir, "fixtures/learning/invalid-route.json");
+    // When
+    const reviewed = run(["review-learning", "--spec", learning, "--json"]);
+    const bare = run(["review-learning", "--spec", legacy, "--json"]);
+    const rejected = run(["review-learning", "--spec", dangling, "--json"]);
+    // Then
+    expect(reviewed.code).toBe(0);
+    const review = JSON.parse(reviewed.stdout) as {
+      hasLearningLayer: boolean;
+      counts: { warn: number };
+      findings: { rule: string; target: string | null }[];
+    };
+    expect(review.hasLearningLayer).toBe(true);
+    expect(review.counts.warn).toBe(0);
+    expect(review.findings.map((finding) => finding.target)).toContain("checkout-service");
+    expect(bare.code).toBe(0);
+    const bareRules = (JSON.parse(bare.stdout) as { findings: { rule: string }[] }).findings.map(
+      (finding) => finding.rule,
+    );
+    expect(bareRules).toContain("LR01-question");
+    expect(bareRules).toContain("LR02-edge-relation");
+    expect(rejected.code).toBe(2);
+    expect(rejected.stderr).toContain("unknown semantic ID missing-node");
+  });
+
+  test("review-learning warns when a single-row figure is too wide to read", () => {
+    // Given
+    const directory = mkdtempSync(join(tmpdir(), "visual-note-review-width-"));
+    const wide = join(directory, "wide.json");
+    const spec = JSON.parse(
+      readFileSync(join(import.meta.dir, "fixtures/learning/checkout-journey.json"), "utf8"),
+    ) as {
+      presentation: { layout: string; frames: unknown[] };
+      nodes: { visual: { frameId?: string } }[];
+    };
+    spec.presentation = { ...spec.presentation, layout: "timeline", frames: [] };
+    for (const node of spec.nodes) delete node.visual.frameId;
+    writeFileSync(wide, `${JSON.stringify(spec)}\n`);
+    // When
+    const result = run(["review-learning", "--spec", wide, "--json"]);
+    // Then
+    expect(result.code).toBe(0);
+    const rules = (JSON.parse(result.stdout) as { findings: { rule: string }[] }).findings.map(
+      (finding) => finding.rule,
+    );
+    expect(rules).toContain("LR07-figure-width");
   });
 
   test("emits and compiles the render-independent interactive authoring contract", () => {

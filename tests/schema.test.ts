@@ -153,6 +153,36 @@ describe("visual note schema", () => {
     expect(revision).toBeNull();
     expect(Bun.file(join(source, ".git")).size).toBe(0);
   });
+
+  test("learning layer may reference only declared semantic IDs", () => {
+    // Given
+    const withLearning = {
+      ...structuredClone(validSpec),
+      learning: {
+        question: "Who handles checkout?",
+        answer: "api-handler calls an unconfirmed owner.",
+        route: [{ semanticId: "api-handler", explanation: "entry point" }],
+        glossary: [{ term: "POST /checkout", meaning: "checkout entry" }],
+        verify: [{ semanticId: "api-handler", how: "read src/checkout.ts" }],
+      },
+    };
+    const danglingRoute = structuredClone(withLearning);
+    danglingRoute.learning.route.push({ semanticId: "absent", explanation: "missing" });
+    const duplicateTerm = structuredClone(withLearning);
+    duplicateTerm.learning.glossary.push({ term: "POST /checkout", meaning: "again" });
+    const badRelation = structuredClone(withLearning);
+    const edge = badRelation.edges.at(0);
+    if (edge === undefined) throw new TypeError("fixture requires an edge");
+    Object.assign(edge, { relation: "teleports" });
+    // When
+    const parsed = parseVisualNoteSpec(withLearning);
+    // Then
+    expect(parsed.learning?.route.map((step) => String(step.semanticId))).toEqual(["api-handler"]);
+    expect(parsed.learning?.checks).toEqual([]);
+    expect(() => parseVisualNoteSpec(danglingRoute)).toThrow("unknown semantic ID absent");
+    expect(() => parseVisualNoteSpec(duplicateTerm)).toThrow("glossary terms must be unique");
+    expect(() => parseVisualNoteSpec(badRelation)).toThrow();
+  });
 });
 
 export { validSpec };

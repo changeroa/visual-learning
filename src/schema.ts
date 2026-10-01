@@ -51,6 +51,7 @@ export const presentationSchema = z
   .object({
     layout: z.enum(["layered", "frames", "timeline", "hub", "trust-boundary", "components"]),
     direction: z.literal("left-to-right").default("left-to-right"),
+    columns: z.number().int().min(1).max(3).optional(),
     frames: z
       .array(
         z
@@ -110,13 +111,53 @@ const claimFields = {
 export const visualNodeSchema = z
   .object({ ...claimFields, visual: nodeVisualSchema.optional() })
   .strict();
+export const edgeRelationValues = [
+  "runtime-call",
+  "data-movement",
+  "state-transition",
+  "static-reference",
+] as const;
 export const visualEdgeSchema = z
   .object({
     ...claimFields,
     from: semanticId,
     to: semanticId,
+    relation: z.enum(edgeRelationValues).optional(),
   })
   .strict();
+
+const learningText = z.string().trim().min(1);
+export const learningSchema = z
+  .object({
+    question: learningText,
+    answer: learningText,
+    route: z.array(z.object({ semanticId, explanation: learningText }).strict()).default([]),
+    glossary: z.array(z.object({ term: learningText, meaning: learningText }).strict()).default([]),
+    scope: z
+      .object({
+        covers: z.array(learningText).default([]),
+        omits: z.array(learningText).default([]),
+      })
+      .strict()
+      .optional(),
+    verify: z
+      .array(z.object({ semanticId, how: learningText, command: learningText.optional() }).strict())
+      .default([]),
+    checks: z.array(z.object({ prompt: learningText, answer: learningText }).strict()).default([]),
+    analogies: z
+      .array(
+        z
+          .object({
+            analogy: learningText,
+            holds: z.array(learningText).min(1),
+            breaks: z.array(learningText).min(1),
+          })
+          .strict(),
+      )
+      .default([]),
+  })
+  .strict();
+export type LearningLayer = z.infer<typeof learningSchema>;
 
 export const visualNoteSpecSchema = z
   .object({
@@ -135,6 +176,7 @@ export const visualNoteSpecSchema = z
       })
       .strict(),
     presentation: presentationSchema.optional(),
+    learning: learningSchema.optional(),
     nodes: z.array(visualNodeSchema).min(1),
     edges: z.array(visualEdgeSchema),
   })
@@ -169,6 +211,22 @@ export const visualNoteSpecSchema = z
           message: `node ${node.semanticId} references an unknown presentation frame`,
         });
     }
+    const learning = spec.learning;
+    if (learning === undefined) return;
+    const claimIds = new Set<string>(allIds);
+    const routeIds = learning.route.map((step) => step.semanticId);
+    if (new Set(routeIds).size !== routeIds.length)
+      context.addIssue({ code: "custom", message: "learning route must not repeat a semantic ID" });
+    for (const id of [...routeIds, ...learning.verify.map((step) => step.semanticId)]) {
+      if (!claimIds.has(id))
+        context.addIssue({
+          code: "custom",
+          message: `learning references unknown semantic ID ${id}`,
+        });
+    }
+    const terms = learning.glossary.map((entry) => entry.term);
+    if (new Set(terms).size !== terms.length)
+      context.addIssue({ code: "custom", message: "learning glossary terms must be unique" });
   });
 
 export type VisualNoteSpec = z.infer<typeof visualNoteSpecSchema>;

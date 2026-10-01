@@ -11,7 +11,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installLinks } from "../install-links";
 import { extractContract } from "./agent-contract";
@@ -20,7 +20,7 @@ import { type DiscoveryClient, parseDiscoveryOptions } from "./discovery-options
 
 export { extractContract } from "./agent-contract";
 
-const canonical = "/Users/billionjaepyo/.agents/skills/visual-learning";
+const canonical = join(homedir(), ".agents/skills/visual-learning");
 const installerRoots = {
   senpi: ".senpi/agent/skills/visual-learning",
   codex: ".codex/skills/visual-learning",

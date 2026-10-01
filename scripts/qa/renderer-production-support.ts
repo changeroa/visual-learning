@@ -1,13 +1,14 @@
 import { rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ReadableStreamDefaultReader as NodeStreamReader } from "node:stream/web";
 import { z } from "zod";
 import { RuntimeError } from "../../src/errors";
 import { command } from "./renderer-live-support";
 
-const EVIDENCE_BIN = "/Users/billionjaepyo/tmp/.omo/evidence/agent-visual-learning-vault/bin";
+const EVIDENCE_BIN = join(homedir(), "tmp/.omo/evidence/agent-visual-learning-vault/bin");
 const APP = "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
-export const PRODUCTION_VAULT = "/Users/billionjaepyo/Documents/Obsidian Vault";
+export const PRODUCTION_VAULT = join(homedir(), "Documents/Obsidian Vault");
 export const PRODUCTION_VAULT_ID = "40a8c869a3fef0af";
 const sceneSchema = z.array(
   z.object({

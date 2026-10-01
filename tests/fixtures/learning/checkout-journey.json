@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "checkout-journey",
+  "kind": "workflow",
+  "revision": 1,
+  "title": "POST /orders 한 건이 지나가는 길",
+  "source": {
+    "root": "/tmp/fixture-source",
+    "commit": null
+  },
+  "presentation": {
+    "layout": "components",
+    "direction": "left-to-right",
+    "frames": [
+      {
+        "id": "request",
+        "label": "요청 처리",
+        "category": "runtime",
+        "order": 0
+      },
+      {
+        "id": "store",
+        "label": "저장",
+        "category": "data",
+        "order": 1
+      },
+      {
+        "id": "async",
+        "label": "비동기 이행",
+        "category": "neutral",
+        "order": 2
+      }
+    ]
+  },
+  "learning": {
+    "question": "POST /orders 요청 하나가 어떤 코드를 거쳐 어디에 기록되고, 언제 비동기로 넘어가는가?",
+    "answer": "OrdersRouter.createOrder가 CheckoutService.submitOrder로 넘기고, 주문은 OrderRepository를 통해 orders 테이블에 저장된다. 결제 승인은 PaymentGateway가 맡고, 이행은 order-created 이벤트를 받은 FulfillmentWorker가 비동기로 처리한다(큐 연결은 ADR 근거의 추론).",
+    "route": [
+      {
+        "semanticId": "orders-router",
+        "explanation": "HTTP 진입점. `createOrder`가 요청을 받아 서비스로 넘긴다."
+      },
+      {
+        "semanticId": "checkout-service",
+        "explanation": "주문 제출의 중심. 저장, 결제, 이벤트 발행을 순서대로 조율한다."
+      },
+      {
+        "semanticId": "order-repository",
+        "explanation": "저장 책임만 가진 계층. `saveOrder`가 orders 테이블에 쓴다."
+      },
+      {
+        "semanticId": "orders-table",
+        "explanation": "`status`와 `payment_reference`가 한 행에 함께 있어 결제 결과가 주문 상태와 묶인다."
+      },
+      {
+        "semanticId": "payment-gateway",
+        "explanation": "외부 결제 승인 경계. 실패하면 주문 상태가 어떻게 되는지는 코드에 없다."
+      },
+      {
+        "semanticId": "order-events",
+        "explanation": "동기 흐름이 끝나는 지점. 이후 처리는 요청과 분리된다."
+      },
+      {
+        "semanticId": "fulfillment-worker",
+        "explanation": "이벤트를 받아 이행을 처리하는 비동기 소비자."
+      }
+    ],
+    "glossary": [
+      {
+        "term": "createOrder",
+        "meaning": "OpenAPI operationId이자 라우터 메서드 이름. 같은 이름이 계약과 코드를 잇는다."
+      },
+      {
+        "term": "payment_reference",
+        "meaning": "결제 승인 결과를 주문 행에 남기는 참조 컬럼."
+      },
+      {
+        "term": "order-created",
+        "meaning": "주문 저장 후 발행되는 이벤트. ADR 0001이 큐로 보낸다고 결정했다."
+      }
+    ],
+    "scope": {
+      "covers": ["주문 생성 요청의 정상 경로", "저장 위치와 비동기 전환 지점"],
+      "omits": ["결제 실패와 재시도 경로", "인증과 권한 검사", "큐 구현체와 재전송 정책"]
+    },
+    "verify": [
+      {
+        "semanticId": "orders-router",
+        "how": "라우터 메서드 이름이 OpenAPI operationId와 같은지 본다.",
+        "command": "grep -n createOrder src/routes/orders.ts openapi/orders.yaml"
+      },
+      {
+        "semanticId": "orders-table",
+        "how": "orders 테이블 정의에서 status와 payment_reference 컬럼을 확인한다.",
+        "command": "sed -n 1,5p db/schema.sql"
+      },
+      {
+        "semanticId": "order-events",
+        "how": "큐 사용 결정을 ADR에서 읽고, 코드에 실제 큐 클라이언트가 없음을 확인한다."
+      }
+    ],
+    "checks": [
+      {
+        "prompt": "PaymentGateway가 실패하면 orders 행의 status는 무엇이 되는가?",
+        "answer": "이 저장소 코드로는 알 수 없다. 실패 경로는 이 그림의 범위 밖이며 미확인 질문으로 남긴다."
+      },
+      {
+        "prompt": "FulfillmentWorker가 느려지면 POST /orders 응답도 느려지는가?",
+        "answer": "아니다(추론). 이벤트 발행 이후는 요청과 분리되어 비동기로 처리된다."
+      }
+    ],
+    "analogies": [
+      {
+        "analogy": "주문 큐는 식당의 주문 전표 꽂이와 같다",
+        "holds": ["주문을 받은 쪽과 조리하는 쪽이 서로를 기다리지 않는다"],
+        "breaks": ["전표는 사라지지 않지만 큐 메시지는 재전송 정책이 없으면 유실될 수 있다"]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "semanticId": "orders-router",
+      "label": "OrdersRouter\nPOST /orders",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/routes/orders.ts",
+          "symbol": "createOrder"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "shape": "rectangle",
+        "lane": "main",
+        "order": 0,
+        "emphasis": "primary",
+        "frameId": "request"
+      }
+    },
+    {
+      "semanticId": "checkout-service",
+      "label": "CheckoutService\nsubmitOrder",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/services/CheckoutService.ts",
+          "symbol": "submitOrder"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "shape": "rectangle",
+        "lane": "main",
+        "order": 1,
+        "emphasis": "primary",
+        "frameId": "request"
+      }
+    },
+    {
+      "semanticId": "order-repository",
+      "label": "OrderRepository\nsaveOrder",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/domain/OrderRepository.ts",
+          "symbol": "saveOrder"
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "shape": "rectangle",
+        "lane": "main",
+        "order": 2,
+        "frameId": "store"
+      }
+    },
+    {
+      "semanticId": "orders-table",
+      "label": "orders table\nstatus · payment_reference",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "db/schema.sql",
+          "lineStart": 1,
+          "lineEnd": 5
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "shape": "rectangle",
+        "lane": "downstream",
+        "order": 3,
+        "frameId": "store"
+      }
+    },
+    {
+      "semanticId": "payment-gateway",
+      "label": "PaymentGateway\nauthorizePayment",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/integrations/PaymentGateway.ts",
+          "symbol": "authorizePayment"
+        }
+      ],
+      "visual": {
+        "category": "external",
+        "shape": "rectangle",
+        "lane": "upstream",
+        "order": 2,
+        "frameId": "request"
+      }
+    },
+    {
+      "semanticId": "order-events",
+      "label": "order-created\nqueue",
+      "status": "inference",
+      "evidence": [
+        {
+          "path": "docs/adr/0001-queue-order-events.md",
+          "lineStart": 2
+        }
+      ],
+      "visual": {
+        "category": "data",
+        "shape": "rectangle",
+        "lane": "main",
+        "order": 3,
+        "frameId": "async"
+      }
+    },
+    {
+      "semanticId": "fulfillment-worker",
+      "label": "FulfillmentWorker\nhandleOrderCreated",
+      "status": "fact",
+      "evidence": [
+        {
+          "path": "src/workers/FulfillmentWorker.ts",
+          "symbol": "handleOrderCreated"
+        }
+      ],
+      "visual": {
+        "category": "runtime",
+        "shape": "rectangle",
+        "lane": "main",
+        "order": 4,
+        "frameId": "async"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "semanticId": "route-to-checkout",
+      "label": "calls submitOrder",
+      "status": "inference",
+      "evidence": [],
+      "from": "orders-router",
+      "to": "checkout-service",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "checkout-to-repository",
+      "label": "calls saveOrder",
+      "status": "inference",
+      "evidence": [],
+      "from": "checkout-service",
+      "to": "order-repository",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "repository-to-table",
+      "label": "writes row",
+      "status": "inference",
+      "evidence": [],
+      "from": "order-repository",
+      "to": "orders-table",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "checkout-to-payment",
+      "label": "authorizes payment",
+      "status": "inference",
+      "evidence": [],
+      "from": "checkout-service",
+      "to": "payment-gateway",
+      "relation": "runtime-call"
+    },
+    {
+      "semanticId": "checkout-to-events",
+      "label": "publishes order-created",
+      "status": "inference",
+      "evidence": [
+        {
+          "path": "src/services/CheckoutService.ts",
+          "symbol": "publishOrderCreated"
+        }
+      ],
+      "from": "checkout-service",
+      "to": "order-events",
+      "relation": "data-movement"
+    },
+    {
+      "semanticId": "events-to-worker",
+      "label": "consumes event",
+      "status": "inference",
+      "evidence": [],
+      "from": "order-events",
+      "to": "fulfillment-worker",
+      "relation": "data-movement"
+    }
+  ]
+}

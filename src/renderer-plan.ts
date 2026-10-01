@@ -209,7 +209,7 @@ function componentPlacements(spec: VisualNoteSpec): {
   let y = 140;
   for (const frame of frames) {
     const members = orderedNodes(spec).filter((node) => node.visual?.frameId === frame.id);
-    const columns = Math.max(1, Math.min(3, members.length));
+    const columns = Math.max(1, Math.min(spec.presentation?.columns ?? 3, members.length));
     const rows = Math.max(1, Math.ceil(members.length / columns));
     const width = 80 + columns * NODE_WIDTH + (columns - 1) * 60;
     const height = Math.max(310, 110 + rows * ROW_STEP);

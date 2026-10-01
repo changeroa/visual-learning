@@ -8,6 +8,7 @@ import { CollisionError, ConflictError, InputError, RuntimeError } from "./error
 import { compileInteractiveAuthoringDocument } from "./interactive-authoring-compiler";
 import { interactiveAuthoringJsonSchema } from "./interactive-authoring-schema";
 import { readJson, sha256, writeResult } from "./io";
+import { reviewLearningSpec } from "./learning-review";
 import {
   bootstrapSample,
   createRenderedSpec,
@@ -38,6 +39,7 @@ Commands:
   validate   validate a strict visual-note specification
   authoring-schema  emit the renderer-independent interactive authoring JSON Schema
   compile-authoring validate and compile before/after authoring JSON for a web renderer
+  review-learning check a spec's learning layer against research-backed figure rules
   open       open a vault-relative artifact through the official CLI
   restore    validate a restore spec contract without mutation
   contract   emit the deterministic cross-agent contract sentinel
@@ -160,6 +162,11 @@ function run(command: string, argv: readonly string[]): void {
     case "authoring-schema": {
       const options = parseOptions(argv, new Set());
       writeResult(interactiveAuthoringJsonSchema(), options.json);
+      return;
+    }
+    case "review-learning": {
+      const options = parseOptions(argv, new Set(["--spec"]));
+      writeResult(reviewLearningSpec(required(options, "--spec")), options.json);
       return;
     }
     case "compile-authoring": {
