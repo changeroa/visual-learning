@@ -122,11 +122,6 @@ button:disabled {
   color: var(--warn);
 }
 
-.unsaved {
-  color: var(--warn);
-  font-weight: 600;
-}
-
 .card-list,
 .figure-grid {
   list-style: none;
@@ -160,9 +155,7 @@ button:disabled {
 
 .split {
   flex: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  display: flex;
   min-height: 0;
 }
 
@@ -171,11 +164,11 @@ button:disabled {
 }
 
 .canvas-pane {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--line);
   background: var(--paper);
 }
 
@@ -196,22 +189,11 @@ button:disabled {
   white-space: nowrap;
 }
 
-.toggle {
-  background: var(--paper);
-  color: var(--accent);
-}
-
-.toggle.on {
-  background: var(--accent);
-  color: #fff;
-}
-
 .save-status {
   font-size: 0.88em;
 }
 
-/* Our view controls live in the toolbar, outside the canvas. 처음 보기 / 전체 보기 always show; the
-   -/%/+ steps only where Excalidraw's own zoom control is hidden. */
+/* The -/%/+ steps show only on phones, where Excalidraw has no zoom control of its own. */
 .zoom-group {
   display: flex;
   align-items: center;
@@ -261,231 +243,47 @@ button:disabled {
   inset: 0;
 }
 
-.side-pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--paper);
+.icon {
+  flex: none;
+  display: block;
 }
 
-.tabs {
-  display: flex;
-  border-bottom: 1px solid var(--line);
-}
-
-.tab {
-  flex: 1;
-  border: none;
-  border-radius: 0;
-  background: var(--paper);
-  color: var(--muted);
-  padding: 10px;
-  border-bottom: 3px solid transparent;
-}
-
-.tab.active {
-  color: var(--ink);
-  font-weight: 700;
-  border-bottom-color: var(--accent);
-}
-
-.tab-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px 32px;
-}
-
-.tab-body h3 {
-  margin: 18px 0 6px;
-  font-size: 1em;
-}
-
-.tab-body h4 {
-  margin: 10px 0 4px;
-  font-size: 0.92em;
-  color: var(--muted);
-}
-
-.question {
-  font-weight: 600;
-}
-
-.route {
-  padding-left: 0;
-  list-style: none;
-}
-
-.route li {
-  margin-bottom: 10px;
-}
-
-.route-step {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
-
-.route-step.active {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
-
-.route-number {
+.icon-button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 1.6em;
-  height: 1.6em;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.85em;
+  padding: 4px 7px;
+  background: var(--paper);
+  color: var(--muted);
 }
 
-.route p {
-  margin: 4px 0 0 8px;
-}
-
-.glossary div {
-  margin-bottom: 6px;
-}
-
-.glossary dd {
-  margin: 0 0 0 12px;
-}
-
-.checks .check-answer {
+.icon-button[aria-pressed="true"] {
   background: var(--accent-wash);
-  padding: 6px 8px;
-  border-radius: 6px;
-}
-
-.analogy {
-  border-left: 3px solid var(--line);
-  padding-left: 10px;
-  margin-bottom: 12px;
-}
-
-.claims,
-.verify-list,
-.orphaned {
-  list-style: none;
-  padding: 0;
-}
-
-.claim,
-.verify,
-.orphaned li {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-}
-
-.claim.active {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
-
-.status {
-  font-size: 0.88em;
-}
-
-.status-fact {
-  color: var(--ok);
-}
-
-.status-inference {
   color: var(--accent);
 }
 
-.status-question {
-  color: var(--warn);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.evidence {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
-.note-editor textarea {
-  width: 100%;
-  font: inherit;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px;
-  resize: vertical;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.note-conflict {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: var(--warn-wash);
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-}
-
-.compare {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+/* Focus mode (Excalidraw's zen mode, Figma's hide-UI): only the toolbar and the canvas remain. */
+body.focus-mode .app-header {
+  display: none;
 }
 
 @media (max-width: 900px) {
   .app {
-    height: auto;
-    min-height: 100vh;
-  }
-
-  .split {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .canvas-pane {
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-  }
-
-  /* The drawing surface itself gets >= 60vh; the toolbar and banners stack above it. */
-  .excalidraw-host {
-    flex: none;
-    height: 64vh;
+    height: 100dvh;
   }
 
   .zoom-group .zoom-step {
     display: inline-block;
-  }
-
-  /* In view mode Excalidraw's floating menus would sit on top of the figure; the toolbar's zoom
-     group replaces them. Edit mode keeps Excalidraw's full UI for drawing. */
-  .excalidraw-host.viewing .layer-ui__wrapper,
-  .excalidraw-host.viewing .App-bottom-bar {
-    display: none;
-  }
-
-  .side-pane {
-    min-height: 60vh;
-  }
-
-  .tab-body {
-    overflow-y: visible;
-  }
-
-  .compare {
-    grid-template-columns: 1fr;
   }
 }

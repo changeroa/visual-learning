@@ -11,10 +11,7 @@ export type AppEventType =
   | "saved"
   | "conflict"
   | "save-failed"
-  | "draft-restored"
-  | "note-saved"
-  | "note-conflict"
-  | "note-failed";
+  | "draft-restored";
 
 export type Announce = (type: AppEventType, detail?: Record<string, unknown>) => void;
 

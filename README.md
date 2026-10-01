@@ -13,6 +13,7 @@ For DB/API explanations, start with what the reader needs to understand: the ove
 - **Crash-safe transactions.** Immutable revision bundles (`_history/revisions/cas-N/`), a single authoritative `STATE` record, monotonic CAS tokens, burned tokens on abort, and rollback/forward recovery. The hosted atlas uses the same compare-the-token rule: a human save racing a publish never loses work.
 - **Question-led figures.** Choose system maps, document relationships, request sequences, state transitions, data lineage, or an API-to-collection CRUD matrix according to the question. Guidance maps these forms to existing output capabilities; it does not add new JSON `kind` values or a bundled web explorer.
 - **Private hosted reading and editing.** One sign-in-protected web app instead of a desktop app, plugins, or local registration steps. Only the explicitly published projects leave your machine, with absolute local paths scrubbed.
+  The figure view is the whiteboard alone: the canvas fills the window and is always editable, with no side panel and no edit or save buttons. Changes autosave when you leave the window (switching apps or tabs, closing the page, or leaving the figure); `Ctrl/⌘+S` saves immediately, and unsaved work stays as a browser draft until the save succeeds. `Ctrl/⌘+Shift+\` toggles a focus mode that also hides the header.
 - **Korean explanations, exact English identifiers.** `CheckoutService` stays `CheckoutService`; the meaning around it is Korean.
 
 ## Install

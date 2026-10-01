@@ -156,33 +156,14 @@ export const api = {
       `/api/projects/${enc(project)}/figures/${enc(artifact)}/scene`,
       { expectedToken, scene },
     ),
-  saveNote: (
-    project: string,
-    artifact: string,
-    nodeKey: string,
-    expectedToken: string | null,
-    body: string,
-  ) =>
-    request<{ token: string }>(
-      "PUT",
-      `/api/projects/${enc(project)}/figures/${enc(artifact)}/notes/${enc(nodeKey)}`,
-      { expectedToken, body },
-    ),
 };
 
 export type SceneConflict = { token: string; scene: Scene };
-export type NoteConflict = { token: string; body: string } | null;
 
 export function sceneConflictOf(error: unknown): SceneConflict | null {
   if (!(error instanceof ApiError) || error.status !== 409) return null;
   const body = error.body as { current?: SceneConflict } | null;
   return body?.current ?? null;
-}
-
-export function noteConflictOf(error: unknown): { current: NoteConflict } | null {
-  if (!(error instanceof ApiError) || error.status !== 409) return null;
-  const body = error.body as { current?: NoteConflict } | null;
-  return { current: body?.current ?? null };
 }
 
 export function errorText(error: unknown): string {
